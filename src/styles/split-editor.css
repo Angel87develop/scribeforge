@@ -1,0 +1,118 @@
+/* Split editor: shared format bar + two panes + divider + toolbar. */
+
+.split-editor-root {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+
+/* Pane container; flex-direction is set inline (row | column). */
+.split-panes {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.split-pane {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    border: 1px solid transparent;
+}
+.split-pane.active {
+    /* Subtle ring to show which pane has the focus without being noisy. */
+    border-color: var(--border-light);
+}
+
+.split-divider {
+    flex: 0 0 6px;
+    background: var(--bg-panel);
+    position: relative;
+    cursor: col-resize;
+}
+.split-divider-horizontal {
+    cursor: row-resize;
+}
+.split-divider:hover {
+    background: var(--bg-sidebar-hover);
+}
+.split-divider-grip {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+}
+.split-divider::after {
+    content: "";
+    position: absolute;
+    width: 2px;
+    height: 18px;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: var(--border-strong);
+    border-radius: 1px;
+}
+.split-divider-horizontal::after {
+    width: 18px;
+    height: 2px;
+}
+
+.split-pane-warn {
+    margin-left: 8px;
+    font-size: var(--font-size-xs);
+    color: var(--warning);
+    font-weight: 600;
+}
+/* Bottom toolbar for split controls. */
+.split-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    background: var(--bg-toolbar);
+    border-top: 1px solid var(--border);
+    min-height: 30px;
+    flex-shrink: 0;
+}
+
+.split-tb-btn {
+    background: transparent;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 3px 10px;
+    min-height: 22px;
+    font-size: var(--font-size-xs);
+    color: var(--text-secondary);
+    cursor: pointer;
+}
+.split-tb-btn:hover:not(:disabled) {
+    background: var(--bg-button-hover);
+    color: var(--text-primary);
+}
+.split-tb-btn.active {
+    background: var(--bg-row-selected);
+    color: var(--text-primary);
+    border-color: var(--border-strong);
+    font-weight: 600;
+}
+.split-tb-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.split-tb-sep {
+    width: 1px;
+    height: 16px;
+    background: var(--separator);
+    margin: 0 4px;
+}

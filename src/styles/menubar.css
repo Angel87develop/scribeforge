@@ -1,0 +1,208 @@
+/* Menu bar styling. */
+
+.menubar {
+    display: flex;
+    align-items: stretch;
+    background: var(--bg-panel);
+    border-bottom: 1px solid var(--border);
+    height: 28px;
+    flex-shrink: 0;
+    user-select: none;
+}
+
+.menubar-item {
+    position: relative;
+    display: flex;
+}
+
+.menubar-button {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    min-height: 100%;
+    padding: 0 10px;
+    font-size: var(--font-size-base);
+    color: var(--text-primary);
+}
+.menubar-button:hover,
+.menubar-button.open {
+    background: var(--bg-row-selected);
+}
+
+.menubar-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    min-width: 230px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.16);
+    padding: 4px;
+    z-index: 80;
+    display: flex;
+    flex-direction: column;
+}
+
+.menubar-entry {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
+    padding: 5px 10px;
+    min-height: 26px;
+    font-size: var(--font-size-base);
+    color: var(--text-primary);
+    text-align: left;
+    width: 100%;
+}
+.menubar-entry:hover:not(:disabled) {
+    background: var(--bg-row-selected);
+}
+.menubar-entry:disabled {
+    color: var(--text-muted);
+    opacity: 0.55;
+}
+
+.menubar-entry-shortcut {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    font-family: var(--font-ui);
+}
+
+.menubar-sep {
+    height: 1px;
+    background: var(--separator);
+    margin: 4px 8px;
+}
+
+/* Toolbar. */
+.toolbar {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px 8px;
+    background: var(--bg-toolbar);
+    border-bottom: 1px solid var(--border);
+    min-height: 36px;
+    flex-shrink: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+}
+
+.toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 1px;
+}
+
+.toolbar-sep {
+    width: 1px;
+    height: 22px;
+    background: var(--separator);
+    margin: 0 5px;
+    flex-shrink: 0;
+}
+
+.toolbar-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 30px;
+    min-height: 28px;
+    padding: 0 5px;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    color: var(--text-primary);
+}
+.toolbar-btn:hover:not(:disabled) {
+    background: var(--bg-button-hover);
+    border-color: var(--border-light);
+}
+.toolbar-btn:active:not(:disabled) {
+    background: var(--bg-sidebar-active);
+}
+.toolbar-btn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+.toolbar-btn.active {
+    background: var(--bg-row-selected);
+    border-color: var(--border-strong);
+}
+
+.toolbar-btn-text {
+    font-size: var(--font-size-sm);
+    padding: 0 8px;
+}
+
+/* Format bar (font controls). */
+.toolbar-select {
+    font-family: var(--font-ui);
+    font-size: var(--font-size-sm);
+    padding: 3px 4px;
+    min-height: 26px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    max-width: 130px;
+}
+
+.toolbar-input {
+    font-family: var(--font-ui);
+    font-size: var(--font-size-sm);
+    width: 44px;
+    padding: 3px 4px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+    text-align: center;
+}
+
+/* View switcher segmented control. */
+.view-switcher {
+    display: flex;
+    background: var(--bg-panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+}
+.view-switcher-btn {
+    background: transparent;
+    border: none;
+    border-radius: 0;
+    min-height: 26px;
+    padding: 0 10px;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+.view-switcher-btn:hover:not(:disabled) {
+    background: var(--bg-row-hover);
+    color: var(--text-primary);
+}
+.view-switcher-btn.active {
+    background: var(--bg-row-selected);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+.view-switcher-btn:disabled {
+    opacity: 0.5;
+}
+
+/* Status bar additions. */
+.status-dirty {
+    color: var(--warning);
+    font-weight: 600;
+}
+.status-saved {
+    color: var(--success);
+}

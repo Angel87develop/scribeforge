@@ -1,0 +1,24 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+# Tauri
+src-tauri/WixTools/
+src-tauri/icons/!(icon-source.png)
+
+# OS
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Env
+.env
+.env.local
+
+# Temp
+*.scri.tmp
+*.scri.bak

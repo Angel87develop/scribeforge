@@ -1,0 +1,74 @@
+/* Paragraph formatting dialog. */
+
+.pf-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-bottom: 12px;
+}
+.pf-field label {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.pf-row {
+    display: flex;
+    gap: 6px;
+    align-items: stretch;
+}
+.pf-row select {
+    flex: 1 1 auto;
+    font-family: inherit;
+    font-size: var(--font-size-base);
+    padding: 4px 6px;
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-primary);
+}
+.pf-row input {
+    width: 90px;
+}
+
+.pf-align-row {
+    display: flex;
+    gap: 4px;
+}
+.pf-align-btn {
+    flex: 1 1 auto;
+    min-height: 26px;
+    font-size: var(--font-size-sm);
+    background: var(--bg-button);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    text-transform: capitalize;
+}
+.pf-align-btn:hover {
+    background: var(--bg-button-hover);
+    color: var(--text-primary);
+}
+.pf-align-btn.active {
+    background: var(--bg-row-selected);
+    border-color: var(--border-strong);
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.pf-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+}
+.pf-grid .pf-field {
+    margin-bottom: 0;
+}
+
+.pf-note {
+    margin-top: 14px;
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    font-style: italic;
+    line-height: 1.4;
+}

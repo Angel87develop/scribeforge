@@ -1,0 +1,40 @@
+[package]
+name = "scribeforge"
+version = "0.1.0"
+description = "ScribeForge — a professional desktop writing application with a native .scri project format."
+authors = ["ScribeForge"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "scribeforge_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+thiserror = "2"
+uuid = { version = "1", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
+log = "0.4"
+env_logger = "0.11"
+dirs = "5"
+rfd = "0.15"
+parking_lot = "0.12"
+base64 = "0.22"
+
+[features]
+# This feature is used for production builds where `devUrl` is not used.
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = 3
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
