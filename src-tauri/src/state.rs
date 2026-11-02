@@ -111,6 +111,8 @@ impl AppState {
             (project.clone(), path.clone())
         };
         project.manifest.touch();
+        // The global preferences decide how many backups are kept.
+        project.manifest.config.backup_count = self.settings.read().saving.backup_count.max(1);
         write_project_to_path(&project, &path)?;
         self.open_project.write().dirty = false;
         Ok(())

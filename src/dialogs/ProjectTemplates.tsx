@@ -17,6 +17,7 @@ import {
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { RecentProjectsDialog } from "./RecentProjectsDialog";
 import "../styles/templates.css";
+import { t, tn } from "../i18n";
 
 type Status = { kind: "idle" } | { kind: "busy"; message: string } | { kind: "error"; message: string } | { kind: "success"; message: string };
 
@@ -37,7 +38,7 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
     // Load categories on mount.
     useEffect(() => {
         api.listCategories().then(setCategories).catch((e) => {
-            setStatus({ kind: "error", message: `Failed to load categories: ${e}` });
+            setStatus({ kind: "error", message: t("Failed to load categories: {error}", { error: String(e) }) });
         });
     }, []);
 
@@ -49,7 +50,7 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
             .then(setTemplates)
             .catch((e) => {
                 setTemplates([]);
-                setStatus({ kind: "error", message: `Failed to load templates: ${e}` });
+                setStatus({ kind: "error", message: t("Failed to load templates: {error}", { error: String(e) }) });
             });
     }, [activeCategory]);
 
@@ -67,42 +68,42 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
 
     const handleOpen = () => {
         if (!selectedTemplate) {
-            setStatus({ kind: "error", message: "Select a template first." });
+            setStatus({ kind: "error", message: t("Select a template first.") });
             return;
         }
         setOverlay("create");
     };
 
     const handleOpenExisting = async () => {
-        setStatus({ kind: "busy", message: "Opening file dialog…" });
+        setStatus({ kind: "busy", message: t("Opening file dialog…") });
         try {
             const result = await api.openExistingFileDialog();
             if (result) {
-                setStatus({ kind: "success", message: `Opened ${result.manifest.name}` });
+                setStatus({ kind: "success", message: t("Opened {name}", { name: result.manifest.name }) });
                 onProjectOpened();
             } else {
                 setStatus({ kind: "idle" });
             }
         } catch (e) {
-            setStatus({ kind: "error", message: `Failed to open project: ${e}` });
+            setStatus({ kind: "error", message: t("Failed to open project: {error}", { error: String(e) }) });
         }
     };
 
     const handleOpenRecentPath = async (path: string) => {
-        setStatus({ kind: "busy", message: "Opening project…" });
+        setStatus({ kind: "busy", message: t("Opening project…") });
         setOverlay(null);
         try {
             const result = await api.openProjectAtPath(path);
-            setStatus({ kind: "success", message: `Opened ${result.manifest.name}` });
+            setStatus({ kind: "success", message: t("Opened {name}", { name: result.manifest.name }) });
             onProjectOpened();
         } catch (e) {
-            setStatus({ kind: "error", message: `Failed to open project: ${e}` });
+            setStatus({ kind: "error", message: t("Failed to open project: {error}", { error: String(e) }) });
         }
     };
 
     const handleCreated = () => {
         setOverlay(null);
-        setStatus({ kind: "success", message: "Project created." });
+        setStatus({ kind: "success", message: t("Project created.") });
         onProjectOpened();
     };
 
@@ -117,7 +118,7 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                 </div>
                 <div>
                     <div className="templates-banner-title">ScribeForge</div>
-                    <div className="templates-banner-subtitle">Project Templates</div>
+                    <div className="templates-banner-subtitle">{t("Project Templates")}</div>
                 </div>
             </div>
 
@@ -133,10 +134,10 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                                 key={cat.id}
                                 className={`category-item${cat.id === activeCategory ? " active" : ""}`}
                                 onClick={() => setActiveCategory(cat.id)}
-                                title={cat.description}
+                                title={t(cat.description)}
                             >
                                 <Icon size={15} className="cat-icon" />
-                                <span>{cat.label}</span>
+                                <span>{t(cat.label)}</span>
                                 {count !== null && <span className="cat-count">{count}</span>}
                             </div>
                         );
@@ -147,10 +148,10 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                 <div className="templates-center">
                     <div className="templates-center-header">
                         <div className="templates-center-title">
-                            {activeCat ? activeCat.label : "Templates"}
+                            {activeCat ? t(activeCat.label) : t("Templates")}
                         </div>
                         {activeCat && (
-                            <div className="templates-center-desc">{activeCat.description}</div>
+                            <div className="templates-center-desc">{t(activeCat.description)}</div>
                         )}
                     </div>
                     <div className="templates-grid-scroll">
@@ -163,7 +164,7 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                                     padding: "20px",
                                 }}
                             >
-                                No templates in this category.
+                                {t("No templates in this category.")}
                             </div>
                         ) : (
                             <div className="templates-grid">
@@ -183,11 +184,11 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                                             <div className="template-card-icon">
                                                 <Icon size={18} />
                                             </div>
-                                            <div className="template-card-name">{tpl.name}</div>
-                                            <div className="template-card-desc">{tpl.description}</div>
+                                            <div className="template-card-name">{t(tpl.name)}</div>
+                                            <div className="template-card-desc">{t(tpl.description)}</div>
                                             <div className={`template-card-badge${tpl.has_starter_content ? "" : " empty"}`}>
                                                 <span className="dot" />
-                                                {tpl.has_starter_content ? "Includes sample content" : "Empty"}
+                                                {tpl.has_starter_content ? t("Includes sample content") : t("Empty")}
                                             </div>
                                         </div>
                                     );
@@ -209,32 +210,35 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                                     })()}
                                 </div>
                                 <div>
-                                    <div className="templates-preview-name">{selectedTemplate.name}</div>
+                                    <div className="templates-preview-name">{t(selectedTemplate.name)}</div>
                                     <div className="templates-preview-category">
-                                        {selectedTemplate.category.replace(/-/g, " ")}
+                                        {t(
+                                            categories.find((c) => c.id === selectedTemplate.category)?.label ??
+                                                selectedTemplate.category.replace(/-/g, " "),
+                                        )}
                                     </div>
                                 </div>
                             </div>
                             <div className="templates-preview-section">
-                                <div className="templates-preview-label">Description</div>
-                                <div className="templates-preview-text">{selectedTemplate.description}</div>
+                                <div className="templates-preview-label">{t("Description")}</div>
+                                <div className="templates-preview-text">{t(selectedTemplate.description)}</div>
                             </div>
                             <div className="templates-preview-section">
-                                <div className="templates-preview-label">Preview</div>
-                                <div className="templates-preview-text">{selectedTemplate.preview}</div>
+                                <div className="templates-preview-label">{t("Preview")}</div>
+                                <div className="templates-preview-text">{t(selectedTemplate.preview)}</div>
                             </div>
                             <div className="templates-preview-section">
-                                <div className="templates-preview-label">Starter Content</div>
+                                <div className="templates-preview-label">{t("Starter Content")}</div>
                                 <div className="templates-preview-text">
                                     {selectedTemplate.has_starter_content
-                                        ? "This template creates sample documents you can edit or delete."
-                                        : "This template creates an empty project structure."}
+                                        ? t("This template creates sample documents you can edit or delete.")
+                                        : t("This template creates an empty project structure.")}
                                 </div>
                             </div>
                         </>
                     ) : (
                         <div className="templates-preview-empty">
-                            Select a template to see its preview.
+                            {t("Select a template to see its preview.")}
                         </div>
                     )}
                 </div>
@@ -244,22 +248,22 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
             <div className="templates-actions">
                 <div className="btn-group">
                     <button onClick={() => setOverlay("recent")}>
-                        <IconClock size={15} /> Open Recent
+                        <IconClock size={15} /> {t("Open Recent")}
                     </button>
                     <button onClick={handleOpenExisting}>
-                        <IconOpen size={15} /> Open Existing File
+                        <IconOpen size={15} /> {t("Open Existing File")}
                     </button>
                 </div>
                 <div className="spacer" />
                 <button onClick={onCancel}>
-                    <IconClose size={15} /> Cancel
+                    <IconClose size={15} /> {t("Cancel")}
                 </button>
                 <button
                     className="primary"
                     disabled={!selectedTemplate || status.kind === "busy"}
                     onClick={handleOpen}
                 >
-                    <IconPlus size={15} /> Open
+                    <IconPlus size={15} /> {t("Open")}
                 </button>
             </div>
 
@@ -279,7 +283,7 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                 )}
                 {status.kind === "idle" && (
                     <span className="status-message">
-                        {templates.length} template{templates.length !== 1 ? "s" : ""} available
+                        {tn(templates.length, "{n} template available", "{n} templates available")}
                     </span>
                 )}
                 <span>ScribeForge 0.1.0</span>

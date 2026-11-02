@@ -8,26 +8,30 @@
 
 import { useEffect, useRef, useState } from "react";
 import "../styles/menubar.css";
+import { t } from "../i18n";
 
 export type MenuAction =
     // File
     | "new-project" | "new-document" | "new-folder" | "open-project" | "open-recent"
-    | "save" | "save-as" | "close-project" | "exit"
+    | "save" | "save-as" | "compile" | "close-project" | "exit"
     // Edit
     | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"
-    | "find" | "find-next" | "find-prev" | "replace" | "search-project"
+    | "find" | "find-next" | "find-prev" | "replace" | "search-project" | "find-replace" | "add-comment"
     // View
     | "toggle-binder" | "toggle-inspector" | "toggle-format-bar"
-    | "view-editor" | "focus-mode" | "zoom-in" | "zoom-out" | "zoom-reset"
+    | "view-editor" | "focus-mode" | "composition-mode" | "zoom-in" | "zoom-out" | "zoom-reset"
+    | "toggle-typewriter" | "timeline"
     // Documents
-    | "duplicate" | "rename" | "move-to-trash" | "restore" | "delete-permanently"
+    | "duplicate" | "rename" | "move-to-trash" | "restore" | "delete-permanently" | "take-snapshot"
+    | "new-character-sheet" | "new-place-sheet"
     // Format
     | "bold" | "italic" | "underline" | "strikethrough"
     | "align-left" | "align-center" | "align-right" | "align-justify"
     | "list-bullet" | "list-ordered"
-    | "paragraph-formatting"
+    | "paragraph-formatting" | "join-lines"
     // Tools
     | "project-search" | "word-count" | "project-stats" | "preferences"
+    | "project-targets" | "writing-stats" | "spelling" | "labels-status"
     // Window
     | "reset-layout"
     // Help
@@ -35,6 +39,7 @@ export type MenuAction =
 
 export interface MenuItemDef {
     action?: MenuAction;
+    /** English; translated when drawn. */
     label: string;
     shortcut?: string;
     separator?: boolean;
@@ -42,6 +47,7 @@ export interface MenuItemDef {
 }
 
 export interface MenuDef {
+    /** English; translated when drawn. */
     label: string;
     items: MenuItemDef[];
 }
@@ -76,7 +82,7 @@ export function MenuBar({ menus, onAction }: Props) {
                             if (open !== null) setOpen(i);
                         }}
                     >
-                        {menu.label}
+                        {t(menu.label)}
                     </button>
                     {open === i && (
                         <div className="menubar-dropdown">
@@ -95,7 +101,7 @@ export function MenuBar({ menus, onAction }: Props) {
                                             }
                                         }}
                                     >
-                                        <span className="menubar-entry-label">{item.label}</span>
+                                        <span className="menubar-entry-label">{t(item.label)}</span>
                                         {item.shortcut && (
                                             <span className="menubar-entry-shortcut">{item.shortcut}</span>
                                         )}

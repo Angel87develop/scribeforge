@@ -80,6 +80,13 @@
     min-height: 0;
 }
 
+/* While a side panel is being resized: keep the cursor and don't select text. */
+body.col-resizing,
+body.col-resizing * {
+    cursor: col-resize !important;
+    user-select: none !important;
+}
+
 /* Binder */
 .ws-binder {
     width: var(--sidebar-width);

@@ -4,12 +4,16 @@
 //! and installs the global error logger.
 
 mod commands;
+pub mod compile;
 pub mod errors;
+pub mod format_profiles;
+pub mod organization;
 pub mod project;
 pub mod settings;
 mod state;
 pub mod storage;
 pub mod templates;
+pub mod writing;
 
 use state::AppState;
 
@@ -68,6 +72,45 @@ pub fn run() {
             commands::get_default_project_dir,
             commands::project_path_exists,
             commands::pick_save_file,
+            commands::list_compile_presets,
+            commands::list_format_profiles,
+            commands::compile_project,
+            commands::compile_preview,
+            commands::get_preferences,
+            commands::update_preferences,
+            commands::get_writing_goals,
+            commands::set_writing_goals,
+            commands::reset_writing_session,
+            commands::get_writing_stats,
+            commands::create_snapshot,
+            commands::list_snapshots,
+            commands::get_snapshot,
+            commands::rename_snapshot,
+            commands::delete_snapshot,
+            commands::restore_snapshot,
+            commands::diff_snapshot,
+            commands::get_spelling,
+            commands::set_spell_language,
+            commands::add_to_dictionary,
+            commands::remove_from_dictionary,
+            commands::spell_check,
+            commands::spell_suggest,
+            commands::find_in_project,
+            commands::replace_in_project,
+            commands::get_organization,
+            commands::set_organization,
+            commands::list_collections,
+            commands::save_collection,
+            commands::delete_collection,
+            commands::move_collection,
+            commands::add_to_collection,
+            commands::remove_from_collection,
+            commands::collection_items,
+            commands::get_links,
+            commands::get_timeline,
+            commands::save_timeline_event,
+            commands::delete_timeline_event,
+            commands::reset_card_positions,
             commands::quit_app,
         ])
         .run(tauri::generate_context!())

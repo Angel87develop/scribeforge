@@ -24,6 +24,7 @@ import { FormatBar } from "./FormatBar";
 import { ParagraphFormatDialog } from "./ParagraphFormatDialog";
 import type { EditorApi, FormatState } from "./RichTextEditor";
 import "../styles/split-editor.css";
+import { t } from "../i18n";
 
 const SPLIT_KEY = "sf.editor.split";
 const SPLIT_RATIO_KEY = "sf.editor.ratio";
@@ -52,6 +53,13 @@ interface Props {
     registerEditorApi?: (paneKey: string, api: EditorApi | null) => void;
     /** Tracks which pane last had focus (for clipboard actions). */
     onPaneFocused?: (paneKey: string) => void;
+    /** Unmounts the panes (keeping the layout) while composition mode edits
+     *  the same documents, so two editors never write one document. */
+    suspended?: boolean;
+    /** Bumped when document text changed outside the editors. */
+    reloadToken?: number;
+    /** Extra controls for the bar under the editor (typewriter toggle…). */
+    toolbarExtra?: React.ReactNode;
 }
 
 export function SplitEditor({
@@ -64,6 +72,9 @@ export function SplitEditor({
     onError,
     registerEditorApi,
     onPaneFocused,
+    suspended = false,
+    reloadToken = 0,
+    toolbarExtra,
 }: Props) {
     const [split, setSplit] = useState<Split>(() => loadSplit());
     const [ratio, setRatio] = useState<number>(() => {
@@ -210,8 +221,22 @@ export function SplitEditor({
 
     // Same-document guard (Prueba E): editing the same document in two
     // independent ProseMirror instances would silently overwrite edits, so
-    // the secondary pane becomes read-only with a visible explanation.
-    const sameDoc = primaryId !== null && secondaryId !== null && primaryId === secondaryId;
+    // any document the primary pane shows as text (alone or inside
+    // Scrivenings) is read-only in the secondary pane, with a visible
+    // explanation.
+    const [displayed, setDisplayed] = useState<Record<PaneKey, string[]>>({ primary: [], secondary: [] });
+    const handleDisplayed = useCallback((paneKey: string, ids: string[]) => {
+        setDisplayed((prev) => {
+            const k = paneKey as PaneKey;
+            if (prev[k].join(",") === ids.join(",")) return prev;
+            return { ...prev, [k]: ids };
+        });
+    }, []);
+    const lockedForSecondary = useMemo(
+        () => new Set(split === "none" ? [] : displayed.primary),
+        [split, displayed.primary],
+    );
+    const sameDoc = split !== "none" && displayed.secondary.some((id) => lockedForSecondary.has(id));
 
     const beginSplit = useCallback((dir: Split) => {
         // Pick a different document for the secondary pane, if available.
@@ -291,9 +316,16 @@ export function SplitEditor({
                 editorApi={barApi}
                 format={barFormat}
                 onParagraphFormatting={() => setParaDialogOpen(true)}
+                onAddComment={() => {
+                    if (barApi && !barApi.addComment()) {
+                        onError(t("Select some text in the Text view to comment on it."));
+                    }
+                }}
             />
 
             <div className="split-panes" style={containerStyle}>
+                {suspended && <div className="editor-pane-empty">{t("Composition mode is open.")}</div>}
+                {!suspended && (
                 <div
                     className={`split-pane split-pane-primary${split !== "none" && activePane === "primary" ? " active" : ""}`}
                     style={split === "none" ? { flex: "1 1 auto" } : { flex: `0 0 ${primarySize}` }}
@@ -313,15 +345,18 @@ export function SplitEditor({
                         registerEditorApi={handleRegisterApi}
                         onPaneFocused={handlePaneFocused}
                         onFormatChange={handleFormatChange}
+                        onDisplayedIds={handleDisplayed}
+                        reloadToken={reloadToken}
                     />
                 </div>
+                )}
 
-                {split !== "none" && (
+                {!suspended && split !== "none" && (
                     <>
                         <div
                             className={`split-divider split-divider-${split}`}
                             onMouseDown={startDivider}
-                            title="Drag to resize"
+                            title={t("Drag to resize")}
                         >
                             <span className="split-divider-grip" />
                         </div>
@@ -337,7 +372,8 @@ export function SplitEditor({
                                 documentId={secondaryId}
                                 title={secondaryTitle}
                                 onClose={closeSecondary}
-                                editable={!sameDoc}
+                                lockedIds={lockedForSecondary}
+                                onDisplayedIds={handleDisplayed}
                                 onTitleChanged={onTitleChanged}
                                 onContentChanged={onContentChanged}
                                 onRefresh={onRefresh}
@@ -345,6 +381,7 @@ export function SplitEditor({
                                 registerEditorApi={handleRegisterApi}
                                 onPaneFocused={handlePaneFocused}
                                 onFormatChange={handleFormatChange}
+                                reloadToken={reloadToken}
                             />
                         </div>
                     </>
@@ -354,63 +391,64 @@ export function SplitEditor({
             <div className="split-toolbar">
                 <button
                     className={`split-tb-btn${split === "none" ? " active" : ""}`}
-                    title="Single editor"
+                    title={t("Single editor")}
                     onClick={() => {
                         if (split !== "none") closeSecondary();
                         else setSplit("none");
                     }}
                     disabled={split === "none"}
                 >
-                    Single
+                    {t("Single")}
                 </button>
                 <button
                     className={`split-tb-btn${split === "vertical" ? " active" : ""}`}
-                    title="Split vertically (side by side)"
+                    title={t("Split vertically (side by side)")}
                     onClick={() => beginSplit("vertical")}
                 >
-                    Vertical
+                    {t("Vertical")}
                 </button>
                 <button
                     className={`split-tb-btn${split === "horizontal" ? " active" : ""}`}
-                    title="Split horizontally (stacked)"
+                    title={t("Split horizontally (stacked)")}
                     onClick={() => beginSplit("horizontal")}
                 >
-                    Horizontal
+                    {t("Horizontal")}
                 </button>
                 {split !== "none" && (
                     <>
                         <span className="split-tb-sep" />
                         <button
                             className="split-tb-btn"
-                            title="Toggle orientation"
+                            title={t("Toggle orientation")}
                             onClick={() => setSplit(split === "vertical" ? "horizontal" : "vertical")}
                         >
-                            Toggle orientation
+                            {t("Toggle orientation")}
                         </button>
                         <button
                             className="split-tb-btn"
-                            title="Swap panes"
+                            title={t("Swap panes")}
                             onClick={swapPanes}
                         >
-                            Swap
+                            {t("Swap")}
                         </button>
                         <button
                             className="split-tb-btn"
-                            title="Close secondary pane"
+                            title={t("Close secondary pane")}
                             onClick={closeSecondary}
                         >
-                            Close
+                            {t("Close")}
                         </button>
                         {sameDoc && (
                             <span
                                 className="split-pane-warn"
-                                title="The same document is open in the primary pane. The second pane is read-only to avoid overwrites."
+                                title={t("A document shown here is also open in the primary pane. It is read-only in the second pane to avoid overwrites.")}
                             >
-                                ⚠ Same document — second pane is read-only
+                                ⚠ {t("Same document in both panes — read-only in the second pane")}
                             </span>
                         )}
                     </>
                 )}
+                {toolbarExtra && <span className="split-tb-extra">{toolbarExtra}</span>}
             </div>
 
             {paraDialogOpen && (

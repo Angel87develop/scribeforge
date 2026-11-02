@@ -27,6 +27,8 @@ dirs = "5"
 rfd = "0.15"
 parking_lot = "0.12"
 base64 = "0.22"
+regex = "1"
+spellbook = "0.4"
 
 [features]
 # This feature is used for production builds where `devUrl` is not used.

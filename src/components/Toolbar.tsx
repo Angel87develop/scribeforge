@@ -8,7 +8,9 @@ import type { MenuAction } from "./MenuBar";
 import {
     IconCopy,
     IconDocument,
+    IconExport,
     IconFolder,
+    IconMaximize,
     IconOpen,
     IconPaste,
     IconPlus,
@@ -16,9 +18,11 @@ import {
     IconSave,
     IconScissors,
     IconSearch,
+    IconSettings,
     IconUndo,
 } from "./Icons";
 import "../styles/menubar.css";
+import { t } from "../i18n";
 
 interface Props {
     onAction: (action: MenuAction) => void;
@@ -54,52 +58,70 @@ function Tb({
 export function Toolbar({ onAction, disabledActions }: Props) {
     const d = (a: MenuAction) => disabledActions.has(a);
     return (
-        <div className="toolbar" role="toolbar" aria-label="Main toolbar">
+        <div className="toolbar" role="toolbar" aria-label={t("Main toolbar")}>
             {/* Project & documents */}
             <div className="toolbar-group">
-                <Tb action="new-project" title="New Project" onClick={onAction}>
+                <Tb action="new-project" title={t("New Project")} onClick={onAction}>
                     <IconPlus size={16} />
                 </Tb>
-                <Tb action="open-project" title="Open Project (Ctrl+O)" onClick={onAction}>
+                <Tb action="open-project" title={t("Open Project (Ctrl+O)")} onClick={onAction}>
                     <IconOpen size={16} />
                 </Tb>
-                <Tb action="save" title="Save (Ctrl+S)" onClick={onAction}>
+                <Tb action="save" title={t("Save (Ctrl+S)")} onClick={onAction}>
                     <IconSave size={16} />
                 </Tb>
             </div>
             <div className="toolbar-sep" />
             <div className="toolbar-group">
-                <Tb action="new-document" title="New Document (Ctrl+N)" onClick={onAction}>
+                <Tb action="new-document" title={t("New Document (Ctrl+N)")} onClick={onAction}>
                     <IconDocument size={16} />
                 </Tb>
-                <Tb action="new-folder" title="New Folder" onClick={onAction}>
+                <Tb action="new-folder" title={t("New Folder")} onClick={onAction}>
                     <IconFolder size={16} />
                 </Tb>
             </div>
             <div className="toolbar-sep" />
             {/* Edit / history */}
             <div className="toolbar-group">
-                <Tb action="undo" title="Undo (Ctrl+Z)" disabled={d("undo")} onClick={onAction}>
+                <Tb action="undo" title={t("Undo (Ctrl+Z)")} disabled={d("undo")} onClick={onAction}>
                     <IconUndo size={16} />
                 </Tb>
-                <Tb action="redo" title="Redo (Ctrl+Y)" disabled={d("redo")} onClick={onAction}>
+                <Tb action="redo" title={t("Redo (Ctrl+Y)")} disabled={d("redo")} onClick={onAction}>
                     <IconRedo size={16} />
                 </Tb>
-                <Tb action="cut" title="Cut (Ctrl+X)" disabled={d("cut")} onClick={onAction}>
+                <Tb action="cut" title={t("Cut (Ctrl+X)")} disabled={d("cut")} onClick={onAction}>
                     <IconScissors size={16} />
                 </Tb>
-                <Tb action="copy" title="Copy (Ctrl+C)" disabled={d("copy")} onClick={onAction}>
+                <Tb action="copy" title={t("Copy (Ctrl+C)")} disabled={d("copy")} onClick={onAction}>
                     <IconCopy size={16} />
                 </Tb>
-                <Tb action="paste" title="Paste (Ctrl+V)" disabled={d("paste")} onClick={onAction}>
+                <Tb action="paste" title={t("Paste (Ctrl+V)")} disabled={d("paste")} onClick={onAction}>
                     <IconPaste size={16} />
                 </Tb>
             </div>
             <div className="toolbar-sep" />
             {/* Find */}
             <div className="toolbar-group">
-                <Tb action="find" title="Find (Ctrl+F)" onClick={onAction}>
+                <Tb action="find" title={t("Find (Ctrl+F)")} onClick={onAction}>
                     <IconSearch size={16} />
+                </Tb>
+            </div>
+            <div className="toolbar-sep" />
+            {/* Writing & output */}
+            <div className="toolbar-group">
+                <Tb
+                    action="composition-mode"
+                    title={t("Composition Mode (F11)")}
+                    disabled={d("composition-mode")}
+                    onClick={onAction}
+                >
+                    <IconMaximize size={16} />
+                </Tb>
+                <Tb action="compile" title={t("Compile (Ctrl+Shift+P)")} onClick={onAction}>
+                    <IconExport size={16} />
+                </Tb>
+                <Tb action="preferences" title={t("Preferences (Ctrl+,)")} onClick={onAction}>
+                    <IconSettings size={16} />
                 </Tb>
             </div>
         </div>

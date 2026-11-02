@@ -4,13 +4,17 @@
 //! is the unit that the storage layer serialises into a `.scri` container and
 //! the unit that the workspace state keeps in memory while a project is open.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 
 use chrono::Utc;
 use uuid::Uuid;
 
 use super::document::{Document, DocumentKind, DocumentMetaDto, ImageAttachment};
 use super::manifest::Manifest;
+use crate::organization::collections::Collection;
+use crate::organization::timeline::TimelineEvent;
+use crate::writing::snapshots::{Snapshot, SnapshotMeta};
+use crate::writing::stats::{self, SessionStats, WritingStats};
 
 /// Binary asset data stored in memory and written to the `assets/` directory
 /// inside the `.scri` container.
@@ -36,6 +40,18 @@ pub struct Project {
     pub manifest: Manifest,
     pub documents: HashMap<Uuid, Document>,
     pub assets: HashMap<Uuid, AssetData>,
+    /// Snapshots per document, oldest first.
+    pub snapshots: HashMap<Uuid, Vec<Snapshot>>,
+    /// Words written per day.
+    pub stats: WritingStats,
+    /// Personal spelling dictionary.
+    pub dictionary: BTreeSet<String>,
+    /// The current writing session (not saved).
+    pub session: SessionStats,
+    /// Collections and saved searches, in tab order.
+    pub collections: Vec<Collection>,
+    /// Story timeline events.
+    pub timeline: Vec<TimelineEvent>,
 }
 
 /// Errors specific to tree manipulation. Mapped to `AppError` by the command
@@ -71,7 +87,26 @@ impl Project {
         documents.insert(research.id, research);
         documents.insert(trash.id, trash);
 
-        Self { manifest, documents, assets: HashMap::new() }
+        Self::from_parts(manifest, documents, HashMap::new())
+    }
+
+    /// Assemble a project from loaded parts, with empty writing data.
+    pub fn from_parts(
+        manifest: Manifest,
+        documents: HashMap<Uuid, Document>,
+        assets: HashMap<Uuid, AssetData>,
+    ) -> Self {
+        Self {
+            manifest,
+            documents,
+            assets,
+            snapshots: HashMap::new(),
+            stats: WritingStats::default(),
+            dictionary: BTreeSet::new(),
+            session: SessionStats::default(),
+            collections: Vec::new(),
+            timeline: Vec::new(),
+        }
     }
 
     // -----------------------------------------------------------------------
@@ -163,15 +198,8 @@ impl Project {
                 let in_trash =
                     in_trash_branch || matches!(d.kind, DocumentKind::TrashRoot);
                 out.push(DocumentMetaDto::from_doc(d, in_trash));
-                if matches!(
-                    d.kind,
-                    DocumentKind::Folder
-                        | DocumentKind::DraftRoot
-                        | DocumentKind::ResearchRoot
-                        | DocumentKind::TrashRoot
-                ) {
-                    walk(project, Some(d.id), in_trash, out);
-                }
+                // Documents can hold subdocuments, so every node is walked.
+                walk(project, Some(d.id), in_trash, out);
             }
         }
         let mut out = Vec::new();
@@ -360,18 +388,29 @@ impl Project {
             return Err(TreeError::InvalidKind);
         }
 
-        let target_len = self.children(Some(new_parent)).len() as i32;
-        let index = index.clamp(0, target_len);
+        // `index` is the position among the new siblings, not counting the
+        // moved node itself.
+        let mut siblings: Vec<Uuid> = self
+            .children(Some(new_parent))
+            .iter()
+            .map(|d| d.id)
+            .filter(|&s| s != id)
+            .collect();
+        let index = (index.max(0) as usize).min(siblings.len());
+        siblings.insert(index, id);
 
         if let Some(d) = self.documents.get_mut(&id) {
             d.parent = Some(new_parent);
-            d.order = index;
             d.touch();
+        }
+        for (i, sid) in siblings.iter().enumerate() {
+            if let Some(d) = self.documents.get_mut(sid) {
+                d.order = i as i32;
+            }
         }
         if old_parent != Some(new_parent) {
             self.renumber_siblings(old_parent);
         }
-        self.renumber_siblings(Some(new_parent));
         self.manifest.touch();
         Ok(())
     }
@@ -479,6 +518,17 @@ impl Project {
                 }
             }
             self.documents.remove(r);
+            self.snapshots.remove(r);
+        }
+        // Forget purged documents in collections and on the timeline.
+        for c in &mut self.collections {
+            c.items.retain(|i| !subtree.contains(i));
+        }
+        for e in &mut self.timeline {
+            if e.document.is_some_and(|d| subtree.contains(&d)) {
+                e.document = None;
+            }
+            e.characters.retain(|c| !subtree.contains(c));
         }
         self.renumber_siblings(parent);
         self.manifest.touch();
@@ -518,9 +568,8 @@ impl Project {
                 if matches!(d.kind, DocumentKind::Document | DocumentKind::Research) {
                     total += d.word_count;
                 }
-                if matches!(d.kind, DocumentKind::Folder | DocumentKind::DraftRoot) {
-                    stack.push(Some(d.id));
-                }
+                // Folders and documents with subdocuments both nest.
+                stack.push(Some(d.id));
             }
         }
         total
@@ -529,6 +578,101 @@ impl Project {
     /// Mark the project as modified now.
     pub fn touch(&mut self) {
         self.manifest.touch();
+    }
+
+    // -----------------------------------------------------------------------
+    // Writing statistics
+    // -----------------------------------------------------------------------
+
+    /// Record a change in a document's word count made while writing. Only
+    /// text outside the Trash counts.
+    pub fn record_writing(&mut self, id: Uuid, delta: i64) {
+        if delta == 0 || self.in_trash(id) {
+            return;
+        }
+        if !matches!(
+            self.documents.get(&id).map(|d| d.kind),
+            Some(DocumentKind::Document | DocumentKind::Research)
+        ) {
+            return;
+        }
+        self.stats.record(stats::today(), delta);
+        self.session.record(delta);
+    }
+
+    // -----------------------------------------------------------------------
+    // Snapshots
+    // -----------------------------------------------------------------------
+
+    /// Freeze the current text of a document.
+    pub fn take_snapshot(&mut self, id: Uuid, name: &str) -> TreeResult<SnapshotMeta> {
+        if self.is_root(id) {
+            return Err(TreeError::InvalidKind);
+        }
+        let doc = self.documents.get(&id).ok_or(TreeError::NotFound(id))?;
+        let snap = Snapshot::new(id, name, &doc.title, &doc.content);
+        let meta = SnapshotMeta::from(&snap);
+        self.snapshots.entry(id).or_default().push(snap);
+        self.manifest.touch();
+        Ok(meta)
+    }
+
+    /// Snapshots of a document, newest first.
+    pub fn list_snapshots(&self, id: Uuid) -> Vec<SnapshotMeta> {
+        let mut out: Vec<SnapshotMeta> = self
+            .snapshots
+            .get(&id)
+            .map(|v| v.iter().map(SnapshotMeta::from).collect())
+            .unwrap_or_default();
+        out.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        out
+    }
+
+    pub fn snapshot(&self, id: Uuid, snapshot_id: Uuid) -> Option<&Snapshot> {
+        self.snapshots.get(&id)?.iter().find(|s| s.id == snapshot_id)
+    }
+
+    pub fn delete_snapshot(&mut self, id: Uuid, snapshot_id: Uuid) -> TreeResult<()> {
+        let list = self.snapshots.get_mut(&id).ok_or(TreeError::NotFound(snapshot_id))?;
+        let before = list.len();
+        list.retain(|s| s.id != snapshot_id);
+        if list.len() == before {
+            return Err(TreeError::NotFound(snapshot_id));
+        }
+        if list.is_empty() {
+            self.snapshots.remove(&id);
+        }
+        self.manifest.touch();
+        Ok(())
+    }
+
+    pub fn rename_snapshot(&mut self, id: Uuid, snapshot_id: Uuid, name: &str) -> TreeResult<()> {
+        let snap = self
+            .snapshots
+            .get_mut(&id)
+            .and_then(|v| v.iter_mut().find(|s| s.id == snapshot_id))
+            .ok_or(TreeError::NotFound(snapshot_id))?;
+        snap.name = name.trim().to_string();
+        self.manifest.touch();
+        Ok(())
+    }
+
+    /// Replace the document text with a snapshot's. The current text is
+    /// saved as a new snapshot first, so the restore can be undone.
+    pub fn restore_snapshot(&mut self, id: Uuid, snapshot_id: Uuid) -> TreeResult<()> {
+        let snap = self.snapshot(id, snapshot_id).ok_or(TreeError::NotFound(snapshot_id))?;
+        let content = snap.content.clone();
+        let label = if snap.name.is_empty() {
+            snap.created_at.format("%Y-%m-%d %H:%M").to_string()
+        } else {
+            snap.name.clone()
+        };
+        self.take_snapshot(id, &format!("Before restoring \u{201c}{label}\u{201d}"))?;
+        let doc = self.documents.get_mut(&id).ok_or(TreeError::NotFound(id))?;
+        doc.content = content;
+        doc.touch();
+        self.manifest.touch();
+        Ok(())
     }
 }
 

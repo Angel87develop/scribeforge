@@ -66,6 +66,12 @@ export interface DocumentMetaDto {
     status: string;
     labels: string[];
     word_count: number;
+    /** Word-count target; 0 means none. */
+    word_goal: number;
+    /** "character", "place"… when the document has a sheet. */
+    sheet_kind: string | null;
+    /** Position on a freeform corkboard. */
+    card_pos: CardPos | null;
     created_at: string;
     modified_at: string;
     in_trash: boolean;
@@ -102,7 +108,8 @@ export type Mark =
     | { type: "font_family"; family: string }
     | { type: "font_size"; pt: number }
     | { type: "color"; hex: string }
-    | { type: "highlight"; hex: string };
+    | { type: "highlight"; hex: string }
+    | { type: "comment"; id: string };
 
 export interface RichSpan {
     text: string;
@@ -120,6 +127,15 @@ export interface RichDoc {
     blocks: RichBlock[];
 }
 
+/** A margin comment; its anchor is a `comment` mark in the text. */
+export interface CommentDto {
+    id: string;
+    text: string;
+    resolved: boolean;
+    created_at: string;
+    modified_at: string;
+}
+
 export interface DocumentDto {
     id: string;
     title: string;
@@ -130,8 +146,86 @@ export interface DocumentDto {
     labels: string[];
     status: string;
     word_count: number;
+    word_goal: number;
+    comments: CommentDto[];
+    sheet: Sheet | null;
     created_at: string;
     modified_at: string;
+}
+
+export interface CardPos {
+    x: number;
+    y: number;
+}
+
+export interface SheetField {
+    label: string;
+    value: string;
+}
+
+export interface SheetRelation {
+    target: string;
+    label: string;
+}
+
+/** Structured fields of a character or place sheet. */
+export interface Sheet {
+    kind: string;
+    fields: SheetField[];
+    relations: SheetRelation[];
+}
+
+export interface ColorDef {
+    name: string;
+    color: string;
+}
+
+export interface OrganizationDto {
+    labels: ColorDef[];
+    statuses: ColorDef[];
+}
+
+export interface DefinitionRename {
+    kind: "label" | "status";
+    from: string;
+    to: string;
+}
+
+export interface CollectionQuery {
+    text: string;
+    status: string;
+    label: string;
+    keyword: string;
+    /** "character", "place", "any" or "". */
+    sheet: string;
+    scope: "manuscript" | "research" | "all";
+    documents_only: boolean;
+}
+
+export interface Collection {
+    id: string;
+    name: string;
+    color: string;
+    kind: "manual" | "search";
+    items: string[];
+    query: CollectionQuery;
+}
+
+export interface LinksDto {
+    outgoing: { title: string; target: string | null }[];
+    backlinks: { id: string; title: string; via: "link" | "relation"; context: string }[];
+}
+
+export interface TimelineEvent {
+    id: string;
+    title: string;
+    date: string;
+    time: string;
+    description: string;
+    track: string;
+    color: string;
+    document: string | null;
+    characters: string[];
 }
 
 export interface SearchHitDto {
@@ -153,6 +247,120 @@ export interface UpdateDocumentArgs {
     notes?: string;
     labels?: string[];
     status?: string;
+    word_goal?: number;
+    comments?: CommentDto[];
+    sheet?: Sheet;
+    remove_sheet?: boolean;
+    card_pos?: CardPos;
+    clear_card_pos?: boolean;
+}
+
+export interface WritingGoalsDto {
+    project_goal: number;
+    session_goal: number;
+    /** YYYY-MM-DD or null. */
+    deadline: string | null;
+    manuscript_words: number;
+    session_added: number;
+    session_removed: number;
+    session_started_at: string;
+    today_added: number;
+    /** Days left until the deadline, today included. */
+    days_left: number | null;
+    /** Words a day needed to meet the project goal by the deadline. */
+    words_per_day: number | null;
+}
+
+export interface WritingGoalsArgs {
+    project_goal: number;
+    session_goal: number;
+    deadline: string | null;
+}
+
+export interface DayRow {
+    date: string;
+    added: number;
+    removed: number;
+}
+
+export interface WritingStatsDto {
+    today: number;
+    last_7_days: number;
+    last_30_days: number;
+    total_added: number;
+    total_removed: number;
+    days_written: number;
+    average_per_writing_day: number;
+    current_streak: number;
+    longest_streak: number;
+    best_day: { date: string; words: number } | null;
+    history: DayRow[];
+    today_date: string;
+}
+
+export interface SnapshotMeta {
+    id: string;
+    document_id: string;
+    name: string;
+    title: string;
+    created_at: string;
+    word_count: number;
+}
+
+export interface SnapshotDto extends SnapshotMeta {
+    content: RichDoc;
+}
+
+export interface DiffChunk {
+    kind: "equal" | "insert" | "delete";
+    text: string;
+}
+
+export interface DiffResult {
+    chunks: DiffChunk[];
+    words_added: number;
+    words_removed: number;
+}
+
+export interface SpellingDto {
+    /** "es", "en", "es,en" or "off". */
+    language: string;
+    dictionary: string[];
+}
+
+export interface FindOptions {
+    query: string;
+    regex: boolean;
+    case_sensitive: boolean;
+    whole_word: boolean;
+    in_text: boolean;
+    in_titles: boolean;
+    in_synopsis: boolean;
+    in_notes: boolean;
+    /** Limit to these documents; empty searches the whole project. */
+    documents: string[];
+}
+
+export interface FindMatch {
+    id: string;
+    document_id: string;
+    document_title: string;
+    field: "text" | "title" | "synopsis" | "notes";
+    before: string;
+    matched: string;
+    replacement: string | null;
+    after: string;
+}
+
+export interface FindResult {
+    matches: FindMatch[];
+    documents: number;
+    truncated: boolean;
+}
+
+export interface ReplaceResult {
+    replaced: number;
+    documents: string[];
 }
 
 export interface ImageAttachmentDto {
@@ -163,6 +371,141 @@ export interface ImageAttachmentDto {
     display_width: number;
     display_height: number;
     data_url: string;
+}
+
+export type CompileFormat = "txt" | "markdown" | "html" | "docx" | "pdf" | "epub";
+
+/** Mirrors `compile::CompileSettings` in Rust. */
+export interface CompileSettings {
+    preset: string;
+    font_family: string;
+    font_size: number;
+    line_spacing: number;
+    /** Inches; 0 = no indent. */
+    first_line_indent: number;
+    /** Points after each paragraph. */
+    paragraph_spacing: number;
+    /** Points before each body paragraph. */
+    paragraph_spacing_before: number;
+    alignment: "left" | "justify";
+    folder_titles: boolean;
+    document_titles: boolean;
+    uppercase_titles: boolean;
+    /** Points; 0 = derived from the body size. */
+    chapter_title_size: number;
+    separator: string;
+    page_break_before_chapters: boolean;
+    title_page: boolean;
+    keep_formatting: boolean;
+    page_size: "letter" | "a4" | "a5";
+    /** Inches. */
+    margin: number;
+    /** Inches. */
+    margin_left: number;
+    page_numbers: boolean;
+    /** Running header on PDF and DOCX; empty = none. */
+    header_text: string;
+    language: string;
+}
+
+export interface CompilePreset {
+    id: string;
+    label: string;
+    description: string;
+    settings: CompileSettings;
+}
+
+export interface CompileRequest {
+    format: CompileFormat;
+    settings: CompileSettings;
+    /** Selected binder ids; empty compiles the whole Manuscript. */
+    include: string[];
+    title?: string | null;
+    author?: string | null;
+}
+
+/** Mirrors `commands::PreferencesDto` / `settings.rs` in Rust. */
+export interface Preferences {
+    general: {
+        language: string;
+        theme: "light" | "dark" | "system";
+        open_last_project_on_start: boolean;
+        confirm_deletions: boolean;
+        recent_max: number;
+    };
+    editor: {
+        font_family: string;
+        font_size: number;
+        line_height: number;
+        text_width_px: number;
+        show_ruler: boolean;
+        typewriter_mode: boolean;
+        smart_quotes: "angular" | "curly" | "off";
+        smart_ellipsis: boolean;
+        dialogue_dash: boolean;
+    };
+    appearance: {
+        show_toolbar: boolean;
+        show_binder: boolean;
+        show_inspector: boolean;
+        density: string;
+    };
+    saving: {
+        autosave: boolean;
+        autosave_interval_secs: number;
+        backup_count: number;
+        backup_on_close: boolean;
+    };
+    composition: {
+        background: string;
+        page_color: string;
+        text_color: string;
+        page_width_px: number;
+        font_size: number;
+        page_opacity: number;
+    };
+    format: FormatSettings;
+}
+
+/** Mirrors `format_profiles::FormatProfile` in Rust. */
+export interface FormatProfile {
+    font_family: string;
+    font_size_pt: number;
+    alignment: "left" | "justify";
+    /** Word-processor multiple (1.0 single, 2.0 double). */
+    line_height: number;
+    first_line_indent_cm: number;
+    space_before_pt: number;
+    space_after_pt: number;
+    no_indent_after_heading: boolean;
+    /** Only used when compiling. */
+    export: {
+        page_size: "a4" | "a5" | "letter";
+        margin_cm: number;
+        inner_margin_cm: number;
+        chapter_start: "new_page" | "continuous";
+        /** Empty = blank line. */
+        scene_separator: string;
+        /** 0 = automatic. */
+        chapter_title_size_pt: number;
+        page_numbers: boolean;
+        header_text: string;
+    };
+}
+
+/** Mirrors `format_profiles::FormatSettings` in Rust. */
+export interface FormatSettings {
+    active_profile: string;
+    /** Customised profiles by id; untouched profiles are absent. */
+    custom: Record<string, FormatProfile>;
+}
+
+/** Mirrors `format_profiles::BuiltinProfile` in Rust. */
+export interface BuiltinFormatProfile {
+    id: string;
+    name: string;
+    description: string;
+    profile: FormatProfile;
 }
 
 export interface CreateProjectArgs {
@@ -241,9 +584,86 @@ export const api = {
         invoke("pick_save_file", { title, fileName }),
     closeProject: (): Promise<void> => invoke("close_project"),
     quitApp: (): Promise<void> => invoke("quit_app"),
+    listCompilePresets: (): Promise<CompilePreset[]> => invoke("list_compile_presets"),
+    /** Opens a native save dialog; resolves to the written path or null. */
+    compileProject: (request: CompileRequest): Promise<string | null> =>
+        invoke("compile_project", { request }),
+    compilePreview: (request: CompileRequest): Promise<string> =>
+        invoke("compile_preview", { request }),
+    listFormatProfiles: (): Promise<BuiltinFormatProfile[]> => invoke("list_format_profiles"),
+    getPreferences: (): Promise<Preferences> => invoke("get_preferences"),
+    updatePreferences: (prefs: Preferences): Promise<Preferences> =>
+        invoke("update_preferences", { prefs }),
     pickDirectory: (title?: string): Promise<string | null> =>
         invoke("pick_directory", { title }),
     getDefaultProjectDir: (): Promise<string> => invoke("get_default_project_dir"),
     projectPathExists: (directory: string, name: string): Promise<boolean> =>
         invoke("project_path_exists", { directory, name }),
+
+    // Goals and statistics
+    getWritingGoals: (): Promise<WritingGoalsDto> => invoke("get_writing_goals"),
+    setWritingGoals: (args: WritingGoalsArgs): Promise<WritingGoalsDto> =>
+        invoke("set_writing_goals", { args }),
+    resetWritingSession: (): Promise<WritingGoalsDto> => invoke("reset_writing_session"),
+    getWritingStats: (): Promise<WritingStatsDto> => invoke("get_writing_stats"),
+
+    // Snapshots
+    createSnapshot: (documentId: string, name?: string): Promise<SnapshotMeta> =>
+        invoke("create_snapshot", { documentId, name }),
+    listSnapshots: (documentId: string): Promise<SnapshotMeta[]> =>
+        invoke("list_snapshots", { documentId }),
+    getSnapshot: (documentId: string, snapshotId: string): Promise<SnapshotDto> =>
+        invoke("get_snapshot", { documentId, snapshotId }),
+    renameSnapshot: (documentId: string, snapshotId: string, name: string): Promise<void> =>
+        invoke("rename_snapshot", { documentId, snapshotId, name }),
+    deleteSnapshot: (documentId: string, snapshotId: string): Promise<void> =>
+        invoke("delete_snapshot", { documentId, snapshotId }),
+    restoreSnapshot: (documentId: string, snapshotId: string): Promise<DocumentDto> =>
+        invoke("restore_snapshot", { documentId, snapshotId }),
+    /** Compare with the current text, or with another snapshot. */
+    diffSnapshot: (documentId: string, snapshotId: string, otherId?: string): Promise<DiffResult> =>
+        invoke("diff_snapshot", { documentId, snapshotId, otherId }),
+
+    // Spelling
+    getSpelling: (): Promise<SpellingDto> => invoke("get_spelling"),
+    setSpellLanguage: (language: string): Promise<SpellingDto> =>
+        invoke("set_spell_language", { language }),
+    addToDictionary: (word: string): Promise<SpellingDto> => invoke("add_to_dictionary", { word }),
+    removeFromDictionary: (word: string): Promise<SpellingDto> =>
+        invoke("remove_from_dictionary", { word }),
+    /** Resolves to the misspelled words among `words`. */
+    spellCheck: (words: string[]): Promise<string[]> => invoke("spell_check", { words }),
+    spellSuggest: (word: string): Promise<string[]> => invoke("spell_suggest", { word }),
+
+    // Find and replace
+    findInProject: (options: FindOptions, replacement?: string | null): Promise<FindResult> =>
+        invoke("find_in_project", { options, replacement }),
+    /** Replaces the listed match ids (every match when `ids` is null). */
+    replaceInProject: (options: FindOptions, replacement: string, ids: string[] | null): Promise<ReplaceResult> =>
+        invoke("replace_in_project", { options, replacement, ids }),
+
+    // Labels and statuses
+    getOrganization: (): Promise<OrganizationDto> => invoke("get_organization"),
+    setOrganization: (labels: ColorDef[], statuses: ColorDef[], renames: DefinitionRename[]): Promise<OrganizationDto> =>
+        invoke("set_organization", { labelsList: labels, statuses, renames }),
+
+    // Collections
+    listCollections: (): Promise<Collection[]> => invoke("list_collections"),
+    saveCollection: (collection: Collection): Promise<Collection[]> => invoke("save_collection", { collection }),
+    deleteCollection: (id: string): Promise<Collection[]> => invoke("delete_collection", { id }),
+    moveCollection: (id: string, index: number): Promise<Collection[]> => invoke("move_collection", { id, index }),
+    addToCollection: (id: string, documents: string[]): Promise<Collection[]> =>
+        invoke("add_to_collection", { id, documents }),
+    removeFromCollection: (id: string, document: string): Promise<Collection[]> =>
+        invoke("remove_from_collection", { id, document }),
+    collectionItems: (id: string): Promise<DocumentMetaDto[]> => invoke("collection_items", { id }),
+
+    // Links and timeline
+    getLinks: (id: string): Promise<LinksDto> => invoke("get_links", { id }),
+    getTimeline: (): Promise<TimelineEvent[]> => invoke("get_timeline"),
+    saveTimelineEvent: (event: TimelineEvent): Promise<TimelineEvent[]> => invoke("save_timeline_event", { event }),
+    deleteTimelineEvent: (id: string): Promise<TimelineEvent[]> => invoke("delete_timeline_event", { id }),
+
+    // Corkboard
+    resetCardPositions: (folder: string): Promise<void> => invoke("reset_card_positions", { folder }),
 };

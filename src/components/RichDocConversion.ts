@@ -58,6 +58,8 @@ function markToPm(m: Mark): { type: string; attrs?: Record<string, unknown> } | 
             return { type: "link", attrs: { href: m.href } };
         case "highlight":
             return { type: "highlight", attrs: { color: m.hex } };
+        case "comment":
+            return { type: "comment", attrs: { id: m.id } };
         default:
             return null;
     }
@@ -79,6 +81,8 @@ function pmMarkToMark(m: { type: string; attrs?: Record<string, unknown> }): Mar
             return [{ type: "link", href: String(m.attrs?.href ?? "#") }];
         case "highlight":
             return [{ type: "highlight", hex: String(m.attrs?.color ?? "#ffff00") }];
+        case "comment":
+            return m.attrs?.id ? [{ type: "comment", id: String(m.attrs.id) }] : [];
         case "textStyle": {
             // One textStyle mark may carry fontFamily, fontSize (pt) and color.
             const out: Mark[] = [];

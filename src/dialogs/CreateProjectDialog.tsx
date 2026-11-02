@@ -8,6 +8,7 @@ import { useEffect, useState } from "react";
 import { api, type CreateProjectArgs, type TemplatePreview } from "../services/api";
 import { IconFolderOpen, IconPlus } from "../components/Icons";
 import "../styles/templates.css";
+import { t } from "../i18n";
 
 interface Props {
     template: TemplatePreview;
@@ -86,51 +87,53 @@ export function CreateProjectDialog({ template, defaultDir, onCreated, onCancel 
             <div className="dialog" style={{ minWidth: 480 }} onClick={(e) => e.stopPropagation()}>
                 <div className="dialog-header">
                     <IconPlus size={18} />
-                    <span className="dialog-title">Create New Project</span>
+                    <span className="dialog-title">{t("Create New Project")}</span>
                 </div>
                 <div className="dialog-body">
                     <div className="form-field">
-                        <label>Template</label>
+                        <label>{t("Template")}</label>
                         <div style={{ fontSize: "var(--font-size-base)", color: "var(--text-primary)" }}>
-                            {template.name}
+                            {t(template.name)}
                         </div>
-                        <span className="hint">{template.description}</span>
+                        <span className="hint">{t(template.description)}</span>
                     </div>
 
                     <div className="form-field">
-                        <label htmlFor="proj-name">Project Name</label>
+                        <label htmlFor="proj-name">{t("Project Name")}</label>
                         <input
                             id="proj-name"
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
                             autoFocus
-                            placeholder="My Novel"
+                            placeholder={t("My Novel")}
                         />
                         {nameError && <span className="error">{nameError}</span>}
                     </div>
 
                     <div className="form-field">
-                        <label htmlFor="proj-dir">Location</label>
+                        <label htmlFor="proj-dir">{t("Location")}</label>
                         <div className="dir-picker">
                             <input
                                 id="proj-dir"
                                 type="text"
                                 value={directory}
                                 onChange={(e) => setDirectory(e.target.value)}
-                                placeholder="C:\Users\you\Documents\ScribeForge"
+                                placeholder={t("C:\\Users\\you\\Documents\\ScribeForge")}
                             />
                             <button onClick={pickDir} type="button">
-                                <IconFolderOpen size={15} /> Browse
+                                <IconFolderOpen size={15} /> {t("Browse")}
                             </button>
                         </div>
                         {dirError && <span className="error">{dirError}</span>}
                         <span className="hint">
-                            The project will be saved as “{name.trim() || "Untitled Project"}.scri” in this folder.
+                            {t("The project will be saved as “{file}” in this folder.", {
+                                file: `${name.trim() || t("Untitled Project")}.scri`,
+                            })}
                         </span>
                         {targetExists && (
                             <span className="error">
-                                A project file with this name already exists in the chosen folder. Choose a different name or location.
+                                {t("A project file with this name already exists in the chosen folder. Choose a different name or location.")}
                             </span>
                         )}
                     </div>
@@ -142,14 +145,14 @@ export function CreateProjectDialog({ template, defaultDir, onCreated, onCancel 
                                 checked={includeAuthor}
                                 onChange={(e) => setIncludeAuthor(e.target.checked)}
                             />
-                            Author
+                            {t("Author")}
                         </label>
                         {includeAuthor && (
                             <input
                                 type="text"
                                 value={author}
                                 onChange={(e) => setAuthor(e.target.value)}
-                                placeholder="Your name (optional)"
+                                placeholder={t("Your name (optional)")}
                             />
                         )}
                     </div>
@@ -162,9 +165,9 @@ export function CreateProjectDialog({ template, defaultDir, onCreated, onCancel 
                 </div>
                 <div className="dialog-footer">
                     {busy && <div className="spinner" />}
-                    <button onClick={onCancel} disabled={busy}>Cancel</button>
+                    <button onClick={onCancel} disabled={busy}>{t("Cancel")}</button>
                     <button className="primary" onClick={submit} disabled={!canSubmit}>
-                        Create Project
+                        {t("Create Project")}
                     </button>
                 </div>
             </div>

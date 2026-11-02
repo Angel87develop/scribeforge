@@ -68,6 +68,57 @@ impl ImageAttachment {
     }
 }
 
+/// A margin comment anchored to a fragment of the document text. The anchor
+/// itself is a `Mark::Comment { id }` on the spans it covers; this record holds
+/// what the comment says.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Comment {
+    pub id: Uuid,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub resolved: bool,
+    pub created_at: DateTime<Utc>,
+    #[serde(default = "Utc::now")]
+    pub modified_at: DateTime<Utc>,
+}
+
+/// Structured fields of a character or place sheet ("Age: 34",
+/// "Atmosphere: damp, quiet"), plus relationships to other documents.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct Sheet {
+    /// "character", "place" or "other".
+    #[serde(default)]
+    pub kind: String,
+    #[serde(default)]
+    pub fields: Vec<SheetField>,
+    #[serde(default)]
+    pub relations: Vec<SheetRelation>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+pub struct SheetField {
+    #[serde(default)]
+    pub label: String,
+    #[serde(default)]
+    pub value: String,
+}
+
+/// "Sister of" → another document (usually another sheet).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SheetRelation {
+    pub target: Uuid,
+    #[serde(default)]
+    pub label: String,
+}
+
+/// Where a card sits on a freeform corkboard, in CSS pixels.
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq)]
+pub struct CardPos {
+    pub x: f32,
+    pub y: f32,
+}
+
 /// A single document (binder leaf or folder) inside a project.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Document {
@@ -112,6 +163,22 @@ pub struct Document {
     /// Images attached to this document's Notes tab.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attachments: Vec<ImageAttachment>,
+    /// Word-count target for this document; 0 means no target.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub word_goal: u32,
+    /// Margin comments; their anchors are `Mark::Comment` marks in `content`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub comments: Vec<Comment>,
+    /// Character or place sheet, when the document is one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sheet: Option<Sheet>,
+    /// Position on the parent's freeform corkboard.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub card_pos: Option<CardPos>,
+}
+
+fn is_zero(n: &u32) -> bool {
+    *n == 0
 }
 
 fn default_status() -> String {
@@ -140,6 +207,10 @@ impl Document {
             modified_at: now,
             word_count: 0,
             attachments: Vec::new(),
+            word_goal: 0,
+            comments: Vec::new(),
+            sheet: None,
+            card_pos: None,
         }
     }
 
@@ -270,6 +341,11 @@ pub enum Mark {
     Highlight {
         hex: String,
     },
+    /// Anchor of a margin comment (see `Document::comments`). Not rendered by
+    /// the compiler.
+    Comment {
+        id: Uuid,
+    },
 }
 
 impl RichDoc {
@@ -345,6 +421,10 @@ pub struct DocumentMetaDto {
     pub status: String,
     pub labels: Vec<String>,
     pub word_count: u32,
+    pub word_goal: u32,
+    /// Kind of sheet ("character", "place"…), when the document has one.
+    pub sheet_kind: Option<String>,
+    pub card_pos: Option<CardPos>,
     pub created_at: DateTime<Utc>,
     pub modified_at: DateTime<Utc>,
     /// True if the document (or any ancestor) is inside the Trash root.
@@ -366,6 +446,9 @@ impl DocumentMetaDto {
             status: d.status.clone(),
             labels: d.labels.clone(),
             word_count: d.word_count,
+            word_goal: d.word_goal,
+            sheet_kind: d.sheet.as_ref().map(|s| s.kind.clone()),
+            card_pos: d.card_pos,
             created_at: d.created_at,
             modified_at: d.modified_at,
             in_trash,
@@ -390,6 +473,12 @@ pub struct DocumentDto {
     pub modified_at: DateTime<Utc>,
     #[serde(default)]
     pub attachments: Vec<ImageAttachment>,
+    #[serde(default)]
+    pub word_goal: u32,
+    #[serde(default)]
+    pub comments: Vec<Comment>,
+    #[serde(default)]
+    pub sheet: Option<Sheet>,
 }
 
 impl From<&Document> for DocumentDto {
@@ -407,6 +496,9 @@ impl From<&Document> for DocumentDto {
             created_at: d.created_at,
             modified_at: d.modified_at,
             attachments: d.attachments.clone(),
+            word_goal: d.word_goal,
+            comments: d.comments.clone(),
+            sheet: d.sheet.clone(),
         }
     }
 }

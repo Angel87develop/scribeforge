@@ -19,10 +19,42 @@
     background: rgba(138, 122, 82, 0.06);
 }
 
+/* Notes text folded away: the images take the whole tab. */
+.img-att-root.expanded {
+    border-top: none;
+    padding-top: 0;
+    margin-top: 0;
+}
+
 .img-att-header {
     display: flex;
     align-items: center;
-    justify-content: space-between;
+    gap: 6px;
+}
+
+/* "Fit" toggle: images follow the panel size. */
+.img-att-fit-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: auto;
+    height: 26px;
+    min-height: 26px;
+    padding: 0 8px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+}
+.img-att-fit-btn:hover {
+    background: var(--bg-button-hover);
+    color: var(--text-primary);
+}
+.img-att-fit-btn.active {
+    border-color: var(--accent);
+    color: var(--accent);
+    background: var(--bg-row-selected);
 }
 
 .img-att-label {

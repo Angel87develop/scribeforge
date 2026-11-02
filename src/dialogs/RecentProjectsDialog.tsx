@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { api, type RecentProjectDto } from "../services/api";
 import { IconClock, IconClose, IconOpen } from "../components/Icons";
 import "../styles/templates.css";
+import { getLanguage, t } from "../i18n";
 
 interface Props {
     onOpen: (path: string) => void;
@@ -17,12 +18,12 @@ function formatDate(iso: string): string {
     const diff = now.getTime() - d.getTime();
     const day = 86400000;
     if (diff < day) {
-        return d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+        return d.toLocaleTimeString(getLanguage(), { hour: "2-digit", minute: "2-digit" });
     }
     if (diff < 7 * day) {
-        return d.toLocaleDateString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" });
+        return d.toLocaleDateString(getLanguage(), { weekday: "short", hour: "2-digit", minute: "2-digit" });
     }
-    return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+    return d.toLocaleDateString(getLanguage(), { year: "numeric", month: "short", day: "numeric" });
 }
 
 export function RecentProjectsDialog({ onOpen, onClose }: Props) {
@@ -59,15 +60,15 @@ export function RecentProjectsDialog({ onOpen, onClose }: Props) {
             <div className="dialog" style={{ minWidth: 540 }} onClick={(e) => e.stopPropagation()}>
                 <div className="dialog-header">
                     <IconClock size={18} />
-                    <span className="dialog-title">Open Recent</span>
+                    <span className="dialog-title">{t("Open Recent")}</span>
                 </div>
                 <div className="dialog-body">
                     {error && <div className="recent-empty" style={{ color: "var(--danger)" }}>{error}</div>}
                     {!error && !recents && (
-                        <div className="recent-empty">Loading recent projects…</div>
+                        <div className="recent-empty">{t("Loading recent projects…")}</div>
                     )}
                     {!error && recents && recents.length === 0 && (
-                        <div className="recent-empty">No recent projects yet.</div>
+                        <div className="recent-empty">{t("No recent projects yet.")}</div>
                     )}
                     {!error && recents && recents.length > 0 && (
                         <div className="recent-list">
@@ -85,11 +86,11 @@ export function RecentProjectsDialog({ onOpen, onClose }: Props) {
                                     </div>
                                     <span className="recent-item-date">{formatDate(r.last_opened)}</span>
                                     <span className={`recent-item-status ${r.available ? "ok" : "missing"}`}>
-                                        {r.available ? "Available" : "Missing"}
+                                        {r.available ? t("Available") : t("Missing")}
                                     </span>
                                     <button
                                         className="subtle recent-item-remove"
-                                        title="Remove from list"
+                                        title={t("Remove from list")}
                                         onClick={(e) => remove(r.path, e)}
                                         style={{ padding: "2px 6px", minHeight: 24 }}
                                     >
@@ -101,13 +102,13 @@ export function RecentProjectsDialog({ onOpen, onClose }: Props) {
                     )}
                 </div>
                 <div className="dialog-footer">
-                    <button onClick={onClose}>Close</button>
+                    <button onClick={onClose}>{t("Close")}</button>
                     <button
                         className="primary"
                         disabled={!selected}
                         onClick={openSelected}
                     >
-                        Open
+                        {t("Open")}
                     </button>
                 </div>
             </div>

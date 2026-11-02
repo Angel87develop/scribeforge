@@ -23,6 +23,29 @@ const DOCUMENTS_DIR: &str = "documents";
 const METADATA_DIR: &str = "metadata";
 const METADATA_PROJECT_PATH: &str = "metadata/project.json";
 const ASSETS_DIR: &str = "assets";
+const STATS_PATH: &str = "metadata/stats.json";
+const DICTIONARY_PATH: &str = "metadata/dictionary.json";
+const SNAPSHOTS_DIR: &str = "snapshots";
+const COLLECTIONS_PATH: &str = "metadata/collections.json";
+const TIMELINE_PATH: &str = "metadata/timeline.json";
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct CollectionsFile {
+    #[serde(default)]
+    collections: Vec<crate::organization::collections::Collection>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct TimelineFile {
+    #[serde(default)]
+    events: Vec<crate::organization::timeline::TimelineEvent>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize, Default)]
+struct PersonalDictionary {
+    #[serde(default)]
+    words: Vec<String>,
+}
 
 #[derive(serde::Serialize, serde::Deserialize, Default)]
 struct DocumentIndex {
@@ -193,6 +216,45 @@ fn write_archive(project: &Project, path: &Path) -> AppResult<()> {
         }
     }
 
+    // metadata/stats.json — words written per day.
+    if !project.stats.days.is_empty() {
+        zip.start_file(STATS_PATH, opts)?;
+        zip.write_all(&serde_json::to_vec_pretty(&project.stats)?)?;
+    }
+
+    // metadata/dictionary.json — the personal spelling dictionary.
+    if !project.dictionary.is_empty() {
+        let dict = PersonalDictionary { words: project.dictionary.iter().cloned().collect() };
+        zip.start_file(DICTIONARY_PATH, opts)?;
+        zip.write_all(&serde_json::to_vec_pretty(&dict)?)?;
+    }
+
+    // metadata/collections.json and metadata/timeline.json.
+    if !project.collections.is_empty() {
+        let file = CollectionsFile { collections: project.collections.clone() };
+        zip.start_file(COLLECTIONS_PATH, opts)?;
+        zip.write_all(&serde_json::to_vec_pretty(&file)?)?;
+    }
+    if !project.timeline.is_empty() {
+        let file = TimelineFile { events: project.timeline.clone() };
+        zip.start_file(TIMELINE_PATH, opts)?;
+        zip.write_all(&serde_json::to_vec_pretty(&file)?)?;
+    }
+
+    // snapshots/<document>/<snapshot>.json — only for documents that exist.
+    let mut snap_docs: Vec<&Uuid> = project.snapshots.keys().collect();
+    snap_docs.sort();
+    for doc_id in snap_docs {
+        if !project.documents.contains_key(doc_id) {
+            continue;
+        }
+        for snap in &project.snapshots[doc_id] {
+            let entry = format!("{SNAPSHOTS_DIR}/{doc_id}/{}.json", snap.id);
+            zip.start_file(&entry, opts)?;
+            zip.write_all(&serde_json::to_vec(snap)?)?;
+        }
+    }
+
     zip.finish()?;
     Ok(())
 }
@@ -292,7 +354,40 @@ pub fn read_project_from_path(path: &Path) -> AppResult<Project> {
         }
     }
 
-    Ok(Project { manifest, documents, assets })
+    let mut project = Project::from_parts(manifest, documents, assets);
+
+    // Writing data. These entries are optional: files written before they
+    // existed simply have none.
+    if let Ok(value) = read_json_entry(&mut zip, STATS_PATH) {
+        project.stats = serde_json::from_value(value)?;
+    }
+    if let Ok(value) = read_json_entry(&mut zip, DICTIONARY_PATH) {
+        let dict: PersonalDictionary = serde_json::from_value(value)?;
+        project.dictionary = dict.words.into_iter().collect();
+    }
+    if let Ok(value) = read_json_entry(&mut zip, COLLECTIONS_PATH) {
+        project.collections = serde_json::from_value::<CollectionsFile>(value)?.collections;
+    }
+    if let Ok(value) = read_json_entry(&mut zip, TIMELINE_PATH) {
+        project.timeline = serde_json::from_value::<TimelineFile>(value)?.events;
+    }
+    let snapshot_entries: Vec<String> = zip
+        .file_names()
+        .filter(|n| n.starts_with(SNAPSHOTS_DIR) && n.ends_with(".json"))
+        .map(str::to_string)
+        .collect();
+    for name in snapshot_entries {
+        let value = read_json_entry(&mut zip, &name)?;
+        let snap: crate::writing::snapshots::Snapshot = serde_json::from_value(value)?;
+        if project.documents.contains_key(&snap.document_id) {
+            project.snapshots.entry(snap.document_id).or_default().push(snap);
+        }
+    }
+    for list in project.snapshots.values_mut() {
+        list.sort_by(|a, b| a.created_at.cmp(&b.created_at));
+    }
+
+    Ok(project)
 }
 
 /// Reverse map: file extension → MIME type.

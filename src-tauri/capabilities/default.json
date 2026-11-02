@@ -3,5 +3,5 @@
   "identifier": "default",
   "description": "Default capability for the main ScribeForge window.",
   "windows": ["main"],
-  "permissions": ["core:default"]
+  "permissions": ["core:default", "core:window:allow-set-fullscreen"]
 }

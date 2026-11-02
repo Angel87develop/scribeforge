@@ -113,14 +113,16 @@
     background: var(--bg-elevated);
 }
 .rt-editor-content {
-    /* The ProseMirror contenteditable. */
-    max-width: 720px;
+    /* The ProseMirror contenteditable. The --editor-* variables come from
+       the active writing format profile and the preferences (and
+       composition mode). */
+    max-width: var(--editor-text-width, 720px);
     margin: 0 auto;
     padding: 32px 32px 120px;
     min-height: 100%;
-    font-family: var(--font-editor);
-    font-size: 16px;
-    line-height: 1.8;
+    font-family: var(--editor-font, var(--font-editor));
+    font-size: var(--editor-font-size, 16px);
+    line-height: var(--editor-line-height, 1.8);
     color: var(--text-primary);
 }
 .rt-editor-content .ProseMirror {
@@ -131,8 +133,19 @@
     outline: none;
 }
 
+/* Profile defaults. Paragraphs with their own alignment, spacing or indent
+   carry inline styles, which win over these. */
 .rt-editor-content p {
-    margin: 0 0 1em;
+    margin: var(--editor-para-before, 0) 0 var(--editor-para-after, 1em);
+    text-indent: var(--editor-indent, 0);
+    text-align: var(--editor-align, left);
+}
+.rt-editor-content :is(h1, h2, h3, h4, h5, h6, hr, blockquote) + p {
+    text-indent: var(--editor-indent-after-heading, 0);
+}
+.rt-editor-content :is(li, blockquote) p,
+.rt-editor-content p[data-para-style] {
+    text-indent: 0;
 }
 .rt-editor-content h1,
 .rt-editor-content h2,
@@ -204,7 +217,7 @@
 
 .rt-editor-content .ProseMirror:empty::before,
 .rt-editor-content .ProseMirror p.is-empty:first-child::before {
-    content: "Start writing…";
+    content: var(--editor-placeholder, "Start writing…");
     color: var(--text-muted);
     font-style: italic;
     pointer-events: none;

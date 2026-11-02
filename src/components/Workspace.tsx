@@ -13,8 +13,17 @@
 /// - Inspector metadata editing and image attachments.
 /// - Resizable binder / inspector panels (persisted in localStorage).
 /// - Global keyboard shortcuts (Ctrl+S, Ctrl+N, Ctrl+F, ...).
-/// - Project-wide search overlay.
+/// - Project-wide search overlay, and find and replace with a preview.
+/// - Writing tools: project/session targets with progress in the status
+///   bar, writing statistics, snapshots, spelling, comments and typewriter
+///   mode.
+/// - Organisation: coloured labels and statuses (shared via context), wiki
+///   links between documents, character/place sheets and the timeline.
 /// - A dirty-state indicator in the status bar.
+///
+/// When text changes outside the editors (find and replace, restoring a
+/// snapshot), pending edits are saved first and `reloadToken` is bumped so
+/// every pane reloads what it shows.
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -23,8 +32,24 @@ import {
     type DocumentMetaDto,
     type RichDoc,
     type SearchHitDto,
+    type WritingGoalsDto,
 } from "../services/api";
+import { usePreferences } from "../services/preferences";
+import { CompileDialog } from "../dialogs/CompileDialog";
+import { FindReplaceDialog } from "../dialogs/FindReplaceDialog";
+import { PreferencesDialog } from "../dialogs/PreferencesDialog";
+import { SpellingDialog } from "../dialogs/SpellingDialog";
+import { StatsDialog } from "../dialogs/StatsDialog";
+import { WritingGoalsDialog } from "../dialogs/WritingGoalsDialog";
+import { ProgressBar } from "./ProgressBar";
+import { resetSpellcheck } from "./Spellcheck";
+import { LabelsDialog } from "../dialogs/LabelsDialog";
+import { OrganizationProvider } from "../services/organization";
+import { createSheet } from "./sheetTemplates";
+import { TimelineView } from "./TimelineView";
+import { setLinkFollower, setLinkTargets } from "./WikiLinks";
 import { Binder } from "./Binder";
+import { Composition } from "./Composition";
 import { Inspector } from "./Inspector";
 import { MenuBar, type MenuAction, type MenuDef } from "./MenuBar";
 import { SplitEditor } from "./SplitEditor";
@@ -32,6 +57,7 @@ import { Toolbar } from "./Toolbar";
 import type { EditorApi } from "./RichTextEditor";
 import { IconSearch } from "./Icons";
 import "../styles/workspace.css";
+import { getLanguage, t, tn } from "../i18n";
 
 interface Props {
     onBackToTemplates: () => void;
@@ -42,11 +68,17 @@ const INSPECTOR_KEY = "sf.inspector.width";
 const INSPECTOR_OPEN_KEY = "sf.inspector.open";
 const BINDER_OPEN_KEY = "sf.binder.open";
 
+const BINDER_DEFAULT_WIDTH = 240;
+const INSPECTOR_DEFAULT_WIDTH = 300;
+const PANEL_MIN_WIDTH = 160;
+const PANEL_MAX_WIDTH = 900;
+const EDITOR_MIN_WIDTH = 320;
+
 function loadWidth(key: string, def: number): number {
     const v = localStorage.getItem(key);
     if (!v) return def;
     const n = parseInt(v, 10);
-    return Number.isFinite(n) && n >= 120 && n <= 600 ? n : def;
+    return Number.isFinite(n) && n >= PANEL_MIN_WIDTH && n <= PANEL_MAX_WIDTH ? n : def;
 }
 
 function isFolderKind(kind: string): boolean {
@@ -68,12 +100,24 @@ export function Workspace({ onBackToTemplates }: Props) {
     const [searchOpen, setSearchOpen] = useState(false);
     const [searchQuery, setSearchQuery] = useState("");
     const [searchHits, setSearchHits] = useState<SearchHitDto[]>([]);
+    const [compileOpen, setCompileOpen] = useState(false);
+    const [prefsOpen, setPrefsOpen] = useState(false);
+    const [compositionOpen, setCompositionOpen] = useState(false);
+    const [goalsOpen, setGoalsOpen] = useState(false);
+    const [statsOpen, setStatsOpen] = useState(false);
+    const [findOpen, setFindOpen] = useState(false);
+    const [spellingOpen, setSpellingOpen] = useState(false);
+    const [goals, setGoals] = useState<WritingGoalsDto | null>(null);
+    const [timelineOpen, setTimelineOpen] = useState(false);
+    const [labelsOpen, setLabelsOpen] = useState(false);
+    const [reloadToken, setReloadToken] = useState(0);
+    const { prefs, save: savePrefs } = usePreferences();
 
     // Panel state.
     const [binderOpen, setBinderOpen] = useState(() => localStorage.getItem(BINDER_OPEN_KEY) !== "0");
     const [inspectorOpen, setInspectorOpen] = useState(() => localStorage.getItem(INSPECTOR_OPEN_KEY) !== "0");
-    const [binderWidth, setBinderWidth] = useState(() => loadWidth(BINDER_KEY, 240));
-    const [inspectorWidth, setInspectorWidth] = useState(() => loadWidth(INSPECTOR_KEY, 300));
+    const [binderWidth, setBinderWidth] = useState(() => loadWidth(BINDER_KEY, BINDER_DEFAULT_WIDTH));
+    const [inspectorWidth, setInspectorWidth] = useState(() => loadWidth(INSPECTOR_KEY, INSPECTOR_DEFAULT_WIDTH));
     const [zoom, setZoom] = useState(1);
 
     // Active editor APIs — one per split pane; flushed on save.
@@ -88,6 +132,36 @@ export function Workspace({ onBackToTemplates }: Props) {
     const onPaneFocused = useCallback((paneKey: string) => {
         focusedPaneRef.current = paneKey;
     }, []);
+
+    // Content saves still on their way to the backend.
+    const pendingSavesRef = useRef<Set<Promise<unknown>>>(new Set());
+
+    /** Push every editor's pending edits and wait until they are stored. */
+    const flushEditors = useCallback(async () => {
+        editorApisRef.current.forEach((ed) => ed.flush());
+        await Promise.allSettled([...pendingSavesRef.current]);
+    }, []);
+
+    // ----- Writing goals (status bar) -----
+    const refreshGoals = useCallback(() => {
+        api.getWritingGoals()
+            .then(setGoals)
+            .catch(() => undefined);
+    }, []);
+    const goalsTimer = useRef<number | null>(null);
+    const scheduleGoals = useCallback(() => {
+        if (goalsTimer.current !== null) return;
+        goalsTimer.current = window.setTimeout(() => {
+            goalsTimer.current = null;
+            refreshGoals();
+        }, 1500);
+    }, [refreshGoals]);
+
+    // Text changed outside the editors: reload panes, inspector, binder.
+    const textReplaced = useCallback(() => {
+        setReloadToken((t) => t + 1);
+        refreshGoals();
+    }, [refreshGoals]);
 
     // ----- Load project -----
     const refresh = useCallback(async () => {
@@ -115,6 +189,10 @@ export function Workspace({ onBackToTemplates }: Props) {
 
     useEffect(() => {
         refresh();
+        refreshGoals();
+        api.getSpelling()
+            .then((s) => resetSpellcheck(s.language !== "off"))
+            .catch(() => undefined);
     }, []);
 
     // ----- Selection -----
@@ -132,16 +210,49 @@ export function Workspace({ onBackToTemplates }: Props) {
         });
     }, []);
 
+    // ----- Wiki links: targets follow the binder; Ctrl+click opens them -----
+    useEffect(() => {
+        setLinkTargets(
+            binder
+                .filter((d) => !d.in_trash && !isRootKind(d.kind))
+                .map((d) => ({ id: d.id, title: d.title, kind: d.kind, sheet: d.sheet_kind })),
+        );
+    }, [binder]);
+
+    useEffect(() => {
+        setLinkFollower(async (title, target) => {
+            if (target) {
+                selectDoc(target.id, target.kind);
+                return;
+            }
+            const research = binder.find((d) => d.kind === "research_root");
+            if (!research || !confirm(t("No document is called “{title}”. Create it in Research?", { title }))) return;
+            try {
+                const meta = await api.createDocument(research.id, "research", title);
+                await refresh();
+                selectDoc(meta.id, meta.kind);
+            } catch (e) {
+                setError(String(e));
+            }
+        });
+        return () => setLinkFollower(null);
+    }, [binder, selectDoc, refresh]);
+
     // ----- Content updates from the editor (debounced inside RichTextEditor) -----
     const handleContentChanged = useCallback(async (id: string, rich: RichDoc, words: number) => {
         // Optimistic word-count update for the binder row.
         setBinder((prev) => prev.map((m) => (m.id === id ? { ...m, word_count: words } : m)));
+        const saving = api.updateDocument({ id, content: rich });
+        pendingSavesRef.current.add(saving);
         try {
-            await api.updateDocument({ id, content: rich });
+            await saving;
+            scheduleGoals();
         } catch (e) {
             setError(String(e));
+        } finally {
+            pendingSavesRef.current.delete(saving);
         }
-    }, []);
+    }, [scheduleGoals]);
 
     const handleTitleChanged = useCallback(async (id: string, title: string) => {
         setBinder((prev) => prev.map((m) => (m.id === id ? { ...m, title } : m)));
@@ -158,28 +269,31 @@ export function Workspace({ onBackToTemplates }: Props) {
             // Flush every open editor's pending edits before writing the file.
             editorApisRef.current.forEach((ed) => ed.flush());
             await api.saveCurrentProject();
-            setStatus("Project saved");
+            setStatus(t("Project saved"));
             setProject((p) => (p ? { ...p, dirty: false } : p));
         } catch (e) {
             setError(String(e));
         }
     }, []);
 
-    // ----- Autosave loop (every 30s when dirty) -----
+    // ----- Autosave loop (interval from the preferences; 30s by default) -----
+    const autosaveOn = prefs?.saving.autosave ?? true;
+    const autosaveSecs = prefs?.saving.autosave_interval_secs ?? 30;
     useEffect(() => {
+        if (!autosaveOn) return;
         const id = window.setInterval(async () => {
             try {
                 const wrote = await api.autosaveProject();
                 if (wrote) {
-                    setStatus("Autosaved");
+                    setStatus(t("Autosaved"));
                     setProject((p) => (p ? { ...p, dirty: false } : p));
                 }
             } catch (e) {
                 setError(String(e));
             }
-        }, 30000);
+        }, Math.max(5, autosaveSecs) * 1000);
         return () => window.clearInterval(id);
-    }, []);
+    }, [autosaveOn, autosaveSecs]);
 
     // ----- Helpers for document actions -----
     function defaultParentId(): string | null {
@@ -196,7 +310,7 @@ export function Workspace({ onBackToTemplates }: Props) {
     async function createChild(kind: "document" | "folder") {
         const parent = defaultParentId();
         if (!parent) {
-            setError("No suitable parent folder. Select a folder first.");
+            setError(t("No suitable parent folder. Select a folder first."));
             return;
         }
         try {
@@ -232,15 +346,32 @@ export function Workspace({ onBackToTemplates }: Props) {
                         await save();
                         return;
                     case "save-as": {
-                        const name = project ? `${project.name} (copy).scri` : "Project.scri";
-                        const path = await api.pickSaveFile("Save Project As", name);
+                        const name = project ? `${project.name} (${t("copy")}).scri` : `${t("Project")}.scri`;
+                        const path = await api.pickSaveFile(t("Save Project As"), name);
                         if (path) {
                             await api.saveProjectAs(path);
-                            setStatus("Saved as new project");
+                            setStatus(t("Saved as new project"));
                             await refresh();
                         }
                         return;
                     }
+                    case "compile":
+                        // Pending edits must reach the backend before compiling.
+                        editorApisRef.current.forEach((ed) => ed.flush());
+                        setCompileOpen(true);
+                        return;
+                    case "preferences":
+                        setPrefsOpen(true);
+                        return;
+                    case "composition-mode":
+                        if (compositionOpen) {
+                            setCompositionOpen(false);
+                        } else if (selectedId) {
+                            setCompositionOpen(true);
+                        } else {
+                            setStatus(t("Select a document (or folder) to write in composition mode."));
+                        }
+                        return;
                     case "close-project":
                         await api.closeProject();
                         onBackToTemplates();
@@ -273,6 +404,79 @@ export function Workspace({ onBackToTemplates }: Props) {
                     case "project-search":
                         setSearchOpen(true);
                         return;
+                    case "find-replace":
+                    case "replace":
+                        await flushEditors();
+                        setFindOpen(true);
+                        return;
+                    case "add-comment": {
+                        const editor = editorApisRef.current.get(focusedPaneRef.current);
+                        if (!editor || !editor.addComment()) {
+                            setStatus(t("Select some text in the Text view to comment on it."));
+                        }
+                        return;
+                    }
+                    case "join-lines": {
+                        const editor = editorApisRef.current.get(focusedPaneRef.current);
+                        if (!editor) {
+                            setStatus(t("Open a document in the Text view first."));
+                            return;
+                        }
+                        const n = editor.joinBrokenLines();
+                        setStatus(
+                            n > 0
+                                ? tn(n, "Joined {n} broken line into paragraphs.", "Joined {n} broken lines into paragraphs.")
+                                : t("No lines cut at a fixed width were found."),
+                        );
+                        return;
+                    }
+                    case "take-snapshot": {
+                        const sel = binder.find((d) => d.id === selectedId);
+                        if (!sel || isFolderKind(sel.kind)) {
+                            setStatus(t("Select a document to take a snapshot of it."));
+                            return;
+                        }
+                        await flushEditors();
+                        await api.createSnapshot(sel.id, "");
+                        setStatus(t("Snapshot of “{title}” taken. See the Inspector's Snapshots tab.", { title: sel.title }));
+                        setReloadToken((t) => t + 1);
+                        return;
+                    }
+                    case "project-targets":
+                        await flushEditors();
+                        setGoalsOpen(true);
+                        return;
+                    case "writing-stats":
+                        await flushEditors();
+                        setStatsOpen(true);
+                        return;
+                    case "spelling":
+                        setSpellingOpen(true);
+                        return;
+                    case "labels-status":
+                        setLabelsOpen(true);
+                        return;
+                    case "timeline":
+                        await flushEditors();
+                        setTimelineOpen(true);
+                        return;
+                    case "new-character-sheet":
+                    case "new-place-sheet": {
+                        const research = binder.find((d) => d.kind === "research_root");
+                        if (!research) return;
+                        const id = await createSheet(binder, research.id, a === "new-character-sheet" ? "character" : "place");
+                        setExpanded((prev) => new Set(prev).add(research.id));
+                        await refresh();
+                        selectDoc(id, "research");
+                        return;
+                    }
+                    case "toggle-typewriter":
+                        if (prefs) {
+                            const on = !prefs.editor.typewriter_mode;
+                            await savePrefs({ ...prefs, editor: { ...prefs.editor, typewriter_mode: on } });
+                            setStatus(on ? t("Typewriter mode on") : t("Typewriter mode off"));
+                        }
+                        return;
                     case "toggle-binder":
                         setBinderOpen((v) => {
                             const n = !v;
@@ -294,7 +498,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                         }
                         return;
                     case "rename":
-                        setStatus("Double-click the document title (or a binder row) to rename.");
+                        setStatus(t("Double-click the document title (or a binder row) to rename."));
                         return;
                     case "move-to-trash":
                         if (selectedId) {
@@ -311,7 +515,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                         }
                         return;
                     case "delete-permanently":
-                        if (selectedId && confirm("Delete permanently? This cannot be undone.")) {
+                        if (selectedId && confirm(t("Delete permanently? This cannot be undone."))) {
                             await api.purgeDocument(selectedId);
                             setSelectedId(null);
                             setSelectedKind(null);
@@ -328,21 +532,28 @@ export function Workspace({ onBackToTemplates }: Props) {
                         setZoom(1);
                         return;
                     case "about":
-                        setStatus("ScribeForge 0.1.0 — a desktop writing application.");
+                        setStatus(t("ScribeForge 0.1.0 — a desktop writing application."));
                         return;
                     case "shortcuts":
-                        setStatus("Ctrl+S save · Ctrl+N new doc · Ctrl+F find · Ctrl+B/I/U format · Ctrl+Shift+B/I panels.");
+                        setStatus(
+                            t(
+                                "Ctrl+S save · Ctrl+N new doc · Ctrl+F find · Ctrl+B/I/U format · Ctrl+Shift+B/I panels · Ctrl+Shift+P compile · F11 composition · Ctrl+, preferences.",
+                            ),
+                        );
                         return;
                     case "reset-layout":
                         localStorage.removeItem(BINDER_KEY);
                         localStorage.removeItem(INSPECTOR_KEY);
-                        setBinderWidth(240);
-                        setInspectorWidth(300);
+                        setBinderWidth(BINDER_DEFAULT_WIDTH);
+                        setInspectorWidth(INSPECTOR_DEFAULT_WIDTH);
                         return;
                     case "word-count":
                     case "project-stats":
                         setStatus(
-                            `${project?.word_count ?? 0} words in manuscript · ${binder.length} items in binder.`,
+                            t("{words} words in manuscript · {items} items in binder.", {
+                                words: (project?.word_count ?? 0).toLocaleString(getLanguage()),
+                                items: binder.length,
+                            }),
                         );
                         return;
                     default:
@@ -353,12 +564,17 @@ export function Workspace({ onBackToTemplates }: Props) {
             }
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [selectedId, project, binder, save],
+        [selectedId, project, binder, save, compositionOpen, prefs, savePrefs, flushEditors],
     );
 
     // ----- Keyboard shortcuts -----
     useEffect(() => {
         function onKey(e: KeyboardEvent) {
+            if (e.key === "F11" && !compositionOpen) {
+                e.preventDefault();
+                action("composition-mode");
+                return;
+            }
             if (e.ctrlKey || e.metaKey) {
                 switch (e.key.toLowerCase()) {
                     case "s":
@@ -378,6 +594,32 @@ export function Workspace({ onBackToTemplates }: Props) {
                     case "f":
                         e.preventDefault();
                         action("find");
+                        break;
+                    case "h":
+                        e.preventDefault();
+                        action("find-replace");
+                        break;
+                    case "5":
+                        e.preventDefault();
+                        action("take-snapshot");
+                        break;
+                    case "m":
+                        if (e.shiftKey) {
+                            e.preventDefault();
+                            action("add-comment");
+                        }
+                        break;
+                    case "t":
+                        if (e.shiftKey) {
+                            e.preventDefault();
+                            action("toggle-typewriter");
+                        }
+                        break;
+                    case "l":
+                        if (e.shiftKey) {
+                            e.preventDefault();
+                            action("timeline");
+                        }
                         break;
                     case "b":
                         if (e.shiftKey) {
@@ -399,32 +641,47 @@ export function Workspace({ onBackToTemplates }: Props) {
                             action("duplicate");
                         }
                         break;
+                    case "p":
+                        if (e.shiftKey) {
+                            e.preventDefault();
+                            action("compile");
+                        }
+                        break;
+                    case ",":
+                        e.preventDefault();
+                        action("preferences");
+                        break;
                 }
             }
         }
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [action]);
+    }, [action, compositionOpen]);
 
     // ----- Resizers -----
+    // Dragging a resizer widens one side panel and narrows the editor; the
+    // editor always keeps EDITOR_MIN_WIDTH. Double-click restores the default.
     const startResize = (which: "binder" | "inspector") => (e: React.MouseEvent) => {
         e.preventDefault();
+        const handle = e.currentTarget as HTMLElement;
         const startX = e.clientX;
         const startW = which === "binder" ? binderWidth : inspectorWidth;
+        const other = which === "binder" ? (inspectorOpen ? inspectorWidth : 0) : binderOpen ? binderWidth : 0;
+        const max = Math.max(PANEL_MIN_WIDTH, Math.min(PANEL_MAX_WIDTH, window.innerWidth - other - EDITOR_MIN_WIDTH));
+        handle.classList.add("active");
+        document.body.classList.add("col-resizing");
         const onMove = (ev: MouseEvent) => {
             const delta = ev.clientX - startX;
             const next = which === "binder" ? startW + delta : startW - delta;
-            const clamped = Math.max(140, Math.min(560, next));
+            const clamped = Math.max(PANEL_MIN_WIDTH, Math.min(max, next));
             if (which === "binder") setBinderWidth(clamped);
             else setInspectorWidth(clamped);
         };
         const onUp = () => {
+            handle.classList.remove("active");
+            document.body.classList.remove("col-resizing");
             document.removeEventListener("mousemove", onMove);
             document.removeEventListener("mouseup", onUp);
-            localStorage.setItem(
-                which === "binder" ? BINDER_KEY : INSPECTOR_KEY,
-                String(which === "binder" ? binderWidth : inspectorWidth),
-            );
         };
         document.addEventListener("mousemove", onMove);
         document.addEventListener("mouseup", onUp);
@@ -455,6 +712,8 @@ export function Workspace({ onBackToTemplates }: Props) {
         if (!selectedId || isRootSel) s.add("delete-permanently");
         if (!selectedId || isRootSel) s.add("duplicate");
         if (!selectedId || isRootSel) s.add("rename");
+        if (!selectedId || inTrash) s.add("composition-mode");
+        if (!selected || isFolderKind(selected.kind)) s.add("take-snapshot");
         return s;
     }, [hasEditor, selectedId, isRootSel, inTrash]);
 
@@ -472,6 +731,8 @@ export function Workspace({ onBackToTemplates }: Props) {
                     { label: "Save", action: "save", shortcut: "Ctrl+S" },
                     { label: "Save As…", action: "save-as" },
                     { separator: true, label: "" },
+                    { label: "Compile…", action: "compile", shortcut: "Ctrl+Shift+P" },
+                    { separator: true, label: "" },
                     { label: "Close Project", action: "close-project" },
                     { label: "Exit", action: "exit", shortcut: "Alt+F4" },
                 ],
@@ -488,7 +749,11 @@ export function Workspace({ onBackToTemplates }: Props) {
                     { label: "Select All", action: "select-all", shortcut: "Ctrl+A", disabled: !hasEditor },
                     { separator: true, label: "" },
                     { label: "Find…", action: "find", shortcut: "Ctrl+F" },
+                    { label: "Find and Replace…", action: "find-replace", shortcut: "Ctrl+H" },
                     { label: "Search Project…", action: "search-project", shortcut: "Ctrl+Shift+F" },
+                    { separator: true, label: "" },
+                    { label: "Add Comment", action: "add-comment", shortcut: "Ctrl+Shift+M", disabled: !hasEditor },
+                    { label: "Join Broken Lines", action: "join-lines", disabled: !hasEditor },
                 ],
             },
             {
@@ -496,6 +761,14 @@ export function Workspace({ onBackToTemplates }: Props) {
                 items: [
                     { label: binderOpen ? "Hide Binder" : "Show Binder", action: "toggle-binder", shortcut: "Ctrl+Shift+B" },
                     { label: inspectorOpen ? "Hide Inspector" : "Show Inspector", action: "toggle-inspector", shortcut: "Ctrl+Shift+I" },
+                    { separator: true, label: "" },
+                    { label: "Composition Mode", action: "composition-mode", shortcut: "F11", disabled: disabledActions.has("composition-mode") },
+                    {
+                        label: prefs?.editor.typewriter_mode ? "✓ Typewriter Mode" : "Typewriter Mode",
+                        action: "toggle-typewriter",
+                        shortcut: "Ctrl+Shift+T",
+                    },
+                    { label: "Timeline", action: "timeline", shortcut: "Ctrl+Shift+L" },
                     { separator: true, label: "" },
                     { label: "Zoom In", action: "zoom-in", shortcut: "Ctrl+=" },
                     { label: "Zoom Out", action: "zoom-out", shortcut: "Ctrl+-" },
@@ -512,6 +785,10 @@ export function Workspace({ onBackToTemplates }: Props) {
                     { separator: true, label: "" },
                     { label: "Rename", action: "rename", disabled: disabledActions.has("rename") },
                     { label: "Duplicate", action: "duplicate", shortcut: "Ctrl+Shift+D", disabled: disabledActions.has("duplicate") },
+                    { label: "Take Snapshot", action: "take-snapshot", shortcut: "Ctrl+5", disabled: disabledActions.has("take-snapshot") },
+                    { separator: true, label: "" },
+                    { label: "New Character Sheet", action: "new-character-sheet" },
+                    { label: "New Place Sheet", action: "new-place-sheet" },
                     { separator: true, label: "" },
                     { label: "Move to Trash", action: "move-to-trash", disabled: disabledActions.has("move-to-trash") },
                     { label: "Restore", action: "restore", disabled: disabledActions.has("restore") },
@@ -522,8 +799,18 @@ export function Workspace({ onBackToTemplates }: Props) {
                 label: "Tools",
                 items: [
                     { label: "Search Project…", action: "project-search", shortcut: "Ctrl+Shift+F" },
+                    { label: "Find and Replace…", action: "find-replace", shortcut: "Ctrl+H" },
+                    { separator: true, label: "" },
+                    { label: "Project Targets…", action: "project-targets" },
+                    { label: "Writing Statistics…", action: "writing-stats" },
+                    { label: "Spelling…", action: "spelling" },
+                    { label: "Labels and Status…", action: "labels-status" },
+                    { label: "Timeline", action: "timeline", shortcut: "Ctrl+Shift+L" },
+                    { separator: true, label: "" },
                     { label: "Word Count", action: "word-count" },
                     { label: "Project Statistics", action: "project-stats" },
+                    { separator: true, label: "" },
+                    { label: "Preferences…", action: "preferences", shortcut: "Ctrl+," },
                 ],
             },
             {
@@ -538,7 +825,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                 ],
             },
         ],
-        [binderOpen, inspectorOpen, hasEditor, disabledActions],
+        [binderOpen, inspectorOpen, hasEditor, disabledActions, prefs],
     );
 
     // ----- Search -----
@@ -559,12 +846,13 @@ export function Workspace({ onBackToTemplates }: Props) {
     if (!project) {
         return (
             <div className="ws-loading">
-                {error ? <div className="ws-error">{error}</div> : <div>Loading project…</div>}
+                {error ? <div className="ws-error">{error}</div> : <div>{t("Loading project…")}</div>}
             </div>
         );
     }
 
     return (
+        <OrganizationProvider onError={setError} onSaved={refresh}>
         <div className="ws-root">
             <MenuBar menus={menus} onAction={action} />
             <Toolbar onAction={action} disabledActions={disabledActions} />
@@ -583,7 +871,12 @@ export function Workspace({ onBackToTemplates }: Props) {
                                 onError={setError}
                             />
                         </div>
-                        <div className="binder-resizer" onMouseDown={startResize("binder")} />
+                        <div
+                            className="binder-resizer"
+                            title={t("Drag to resize · double-click to restore")}
+                            onMouseDown={startResize("binder")}
+                            onDoubleClick={() => setBinderWidth(BINDER_DEFAULT_WIDTH)}
+                        />
                     </>
                 )}
 
@@ -600,17 +893,46 @@ export function Workspace({ onBackToTemplates }: Props) {
                     onError={setError}
                     registerEditorApi={registerEditorApi}
                     onPaneFocused={onPaneFocused}
+                    suspended={compositionOpen}
+                    reloadToken={reloadToken}
+                    toolbarExtra={
+                        <button
+                            className={`split-tb-btn${prefs?.editor.typewriter_mode ? " active" : ""}`}
+                            title={t("Typewriter mode: keep the current line in the middle (Ctrl+Shift+T)")}
+                            aria-pressed={!!prefs?.editor.typewriter_mode}
+                            onClick={() => action("toggle-typewriter")}
+                        >
+                            {t("Typewriter")}
+                        </button>
+                    }
                 />
 
                 {inspectorOpen && (
                     <>
-                        <div className="inspector-resizer" onMouseDown={startResize("inspector")} />
+                        <div
+                            className="inspector-resizer"
+                            title={t("Drag to resize · double-click to restore")}
+                            onMouseDown={startResize("inspector")}
+                            onDoubleClick={() => setInspectorWidth(INSPECTOR_DEFAULT_WIDTH)}
+                        />
                         <div style={{ width: `${inspectorWidth}px`, flexShrink: 0, height: "100%", display: "flex" }}>
                             <Inspector
                                 documentId={selectedId}
                                 meta={selected}
                                 onError={setError}
                                 onMetaChanged={refresh}
+                                reloadToken={reloadToken}
+                                flushEditors={flushEditors}
+                                onDocumentRestored={async () => {
+                                    await refresh();
+                                    textReplaced();
+                                    setStatus(t("Snapshot restored. The previous text was kept as a snapshot."));
+                                }}
+                                onOpenDocument={(id) => {
+                                    const kind = binder.find((d) => d.id === id)?.kind ?? "document";
+                                    selectDoc(id, kind);
+                                }}
+                                binder={binder}
                             />
                         </div>
                     </>
@@ -623,17 +945,159 @@ export function Workspace({ onBackToTemplates }: Props) {
                 {!error && status && <span className="status-message">{status}</span>}
                 {!error && !status && selected && (
                     <span className="status-message">
-                        {selected.word_count.toLocaleString()} words — {selected.title}
+                        {t("{n} words — {title}", { n: selected.word_count.toLocaleString(getLanguage()), title: selected.title })}
                     </span>
                 )}
                 {!error && !status && !selected && (
                     <span className="status-message">
-                        {project.word_count.toLocaleString()} words in manuscript · {binder.length} items
+                        {t("{words} words in manuscript · {items} items", {
+                            words: project.word_count.toLocaleString(getLanguage()),
+                            items: binder.length,
+                        })}
                     </span>
                 )}
-                {project.dirty && <span className="status-dirty">● Unsaved changes</span>}
+                {goals && (goals.session_goal > 0 || goals.session_added > 0) && (
+                    <button
+                        type="button"
+                        className="status-goal"
+                        title={
+                            goals.session_goal
+                                ? t("This session: {n} words written of {goal}. Click for project targets.", {
+                                      n: goals.session_added.toLocaleString(getLanguage()),
+                                      goal: goals.session_goal.toLocaleString(getLanguage()),
+                                  })
+                                : t("This session: {n} words written. Click for project targets.", {
+                                      n: goals.session_added.toLocaleString(getLanguage()),
+                                  })
+                        }
+                        onClick={() => action("project-targets")}
+                    >
+                        {t("Session {n}", { n: goals.session_added.toLocaleString(getLanguage()) })}
+                        {goals.session_goal > 0 && ` / ${goals.session_goal.toLocaleString(getLanguage())}`}
+                        {goals.session_goal > 0 && <ProgressBar size="sm" value={goals.session_added} goal={goals.session_goal} />}
+                    </button>
+                )}
+                {goals && goals.project_goal > 0 && (
+                    <button
+                        type="button"
+                        className="status-goal"
+                        title={
+                            goals.words_per_day !== null
+                                ? t("{n} words a day to reach the goal by {deadline} ({days} days left)", {
+                                      n: goals.words_per_day.toLocaleString(getLanguage()),
+                                      deadline: goals.deadline ?? "",
+                                      days: goals.days_left ?? 0,
+                                  })
+                                : t("Manuscript goal. Click for project targets.")
+                        }
+                        onClick={() => action("project-targets")}
+                    >
+                        {t("Manuscript {n} / {goal}", {
+                            n: goals.manuscript_words.toLocaleString(getLanguage()),
+                            goal: goals.project_goal.toLocaleString(getLanguage()),
+                        })}
+                        <ProgressBar size="sm" value={goals.manuscript_words} goal={goals.project_goal} />
+                        {goals.words_per_day !== null && goals.words_per_day > 0 && (
+                            <span className="status-goal-daily">
+                                {t("{n}/day", { n: goals.words_per_day.toLocaleString(getLanguage()) })}
+                            </span>
+                        )}
+                    </button>
+                )}
+                {project.dirty && <span className="status-dirty">● {t("Unsaved changes")}</span>}
                 <span>{project.path}</span>
             </div>
+
+            {compositionOpen && selected && (
+                <Composition
+                    target={selected}
+                    binder={binder}
+                    onContentChanged={handleContentChanged}
+                    registerEditorApi={registerEditorApi}
+                    onExit={() => setCompositionOpen(false)}
+                    onError={setError}
+                />
+            )}
+
+            {compileOpen && (
+                <CompileDialog
+                    binder={binder}
+                    projectName={project.name}
+                    author={project.author}
+                    onClose={() => setCompileOpen(false)}
+                    onError={setError}
+                    onCompiled={(path) => setStatus(t("Compiled to {path}", { path }))}
+                />
+            )}
+
+            {goalsOpen && (
+                <WritingGoalsDialog
+                    onClose={() => setGoalsOpen(false)}
+                    onError={setError}
+                    onChanged={(g) => {
+                        setGoals(g);
+                        setProject((p) => (p ? { ...p, dirty: true } : p));
+                    }}
+                />
+            )}
+
+            {statsOpen && <StatsDialog onClose={() => setStatsOpen(false)} onError={setError} />}
+
+            {spellingOpen && (
+                <SpellingDialog
+                    onClose={() => setSpellingOpen(false)}
+                    onError={setError}
+                    onChanged={(s) => {
+                        resetSpellcheck(s.language !== "off");
+                        setProject((p) => (p ? { ...p, dirty: true } : p));
+                    }}
+                />
+            )}
+
+            {findOpen && (
+                <FindReplaceDialog
+                    currentDocumentId={selected && !isFolderKind(selected.kind) ? selected.id : null}
+                    currentDocumentTitle={selected && !isFolderKind(selected.kind) ? selected.title : null}
+                    flushEditors={flushEditors}
+                    onOpenDocument={(id) => {
+                        const kind = binder.find((d) => d.id === id)?.kind ?? "document";
+                        selectDoc(id, kind);
+                    }}
+                    onReplaced={async (count, docs) => {
+                        await refresh();
+                        textReplaced();
+                        setStatus(
+                            `${tn(count, "Replaced {n} match", "Replaced {n} matches")} ${tn(docs.length, "in {n} document.", "in {n} documents.")}`,
+                        );
+                    }}
+                    onClose={() => setFindOpen(false)}
+                    onError={setError}
+                />
+            )}
+
+            {labelsOpen && <LabelsDialog onClose={() => setLabelsOpen(false)} />}
+
+            {timelineOpen && (
+                <TimelineView
+                    binder={binder}
+                    currentDocumentId={selectedId}
+                    onOpenDocument={(id) => {
+                        setTimelineOpen(false);
+                        const kind = binder.find((d) => d.id === id)?.kind ?? "document";
+                        selectDoc(id, kind);
+                    }}
+                    onClose={() => setTimelineOpen(false)}
+                    onError={setError}
+                />
+            )}
+
+            {prefsOpen && (
+                <PreferencesDialog
+                    onClose={() => setPrefsOpen(false)}
+                    onError={setError}
+                    onSaved={() => setStatus(t("Preferences saved"))}
+                />
+            )}
 
             {/* Search overlay */}
             {searchOpen && (
@@ -652,6 +1116,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                 />
             )}
         </div>
+        </OrganizationProvider>
     );
 }
 
@@ -677,20 +1142,20 @@ function SearchOverlay({
             <div className="dialog" style={{ minWidth: 520 }} onClick={(e) => e.stopPropagation()}>
                 <div className="dialog-header">
                     <IconSearch size={18} />
-                    <span className="dialog-title">Search Project</span>
+                    <span className="dialog-title">{t("Search Project")}</span>
                 </div>
                 <div className="dialog-body">
                     <input
                         type="text"
                         autoFocus
-                        placeholder="Search titles, content, synopsis, notes…"
+                        placeholder={t("Search titles, content, synopsis, notes…")}
                         value={query}
                         onChange={(e) => onQuery(e.target.value)}
                         style={{ marginBottom: 12 }}
                     />
                     <div className="search-results">
                         {hits.length === 0 && query.trim() && (
-                            <div className="recent-empty">No results.</div>
+                            <div className="recent-empty">{t("No results.")}</div>
                         )}
                         {hits.map((hit) => (
                             <div
@@ -710,7 +1175,7 @@ function SearchOverlay({
                     </div>
                 </div>
                 <div className="dialog-footer">
-                    <button onClick={onClose}>Close</button>
+                    <button onClick={onClose}>{t("Close")}</button>
                 </div>
             </div>
         </div>

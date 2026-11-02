@@ -1,7 +1,9 @@
 /* Inspector panel styling. */
 
 .inspector-root {
-    width: var(--inspector-width, 300px);
+    /* Fills the resizable wrapper set by the workspace. */
+    width: 100%;
+    min-width: 0;
     background: var(--bg-panel);
     border-left: 1px solid var(--border);
     display: flex;
@@ -90,6 +92,48 @@
     box-shadow: 0 0 0 1px var(--focus-ring);
 }
 
+/* Fold toggle above the notes text ("Notes ˄ / ˅"). */
+.inspector-section-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    min-height: 24px;
+    padding: 2px 4px;
+    margin-bottom: 6px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    text-align: left;
+    flex-shrink: 0;
+}
+.inspector-section-toggle:hover {
+    background: var(--bg-row-hover);
+    color: var(--text-primary);
+}
+.inspector-section-label {
+    font-size: var(--font-size-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+.inspector-section-preview {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--font-size-xs);
+    font-style: italic;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.inspector-section-chevron {
+    margin-left: auto;
+    flex-shrink: 0;
+    transition: transform 0.15s ease;
+}
+
 .inspector-empty {
     padding: 40px 16px;
     text-align: center;
@@ -167,4 +211,14 @@
 .inspector-resizer:hover,
 .inspector-resizer.active {
     background: var(--accent);
+}
+/* A wider grab area than the 4px line, spilling over both neighbours. */
+.inspector-resizer {
+    position: relative;
+}
+.inspector-resizer::before {
+    content: "";
+    position: absolute;
+    inset: 0 -4px;
+    z-index: 5;
 }

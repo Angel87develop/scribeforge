@@ -9,8 +9,11 @@
 ///    `indentFirst` — mirroring the Rust `ParaAttrs` model — plus the
 ///    `updateParagraphAttrs` command used by the Paragraph Formatting dialog.
 /// 3. `SfEmDash` — typing "--" turns into an em dash "—".
+/// 4. `SfSmartTypography` — Spanish « » (or curly) quotes, "..." → "…",
+///    and "- " at the start of a paragraph → dialogue dash "—".
+/// 5. `SfComment` — the mark that anchors a margin comment to the text.
 
-import { Extension, type Attribute } from "@tiptap/core";
+import { Extension, Mark, mergeAttributes, type Attribute } from "@tiptap/core";
 import { Plugin, PluginKey } from "@tiptap/pm/state";
 
 // ---------------------------------------------------------------------------
@@ -215,6 +218,120 @@ export const SfEmDash = Extension.create({
                 },
             }),
         ];
+    },
+});
+
+// ---------------------------------------------------------------------------
+// Smart typography: quotes, ellipsis, dialogue dash
+// ---------------------------------------------------------------------------
+
+export interface TypographyOptions {
+    /** What `"` becomes: « » (angular), “ ” (curly) or itself (off). */
+    quotes: "angular" | "curly" | "off";
+    /** "..." → "…" */
+    ellipsis: boolean;
+    /** "- " at the start of a paragraph → "—" (Spanish dialogue). */
+    dialogueDash: boolean;
+}
+
+/// Shared by every editor; the preferences update it when they change.
+const typography: TypographyOptions = { quotes: "angular", ellipsis: true, dialogueDash: true };
+
+export function setTypographyOptions(opts: TypographyOptions) {
+    Object.assign(typography, opts);
+}
+
+/** Characters after which a quote opens rather than closes. */
+const OPENS_AFTER = /[\s([{«“‘—–\-/￼]/;
+
+/// The quote character to insert for a typed `"` or `'`. Angular quotes
+/// nest Spanish-style: « … “ … ” … ».
+function smartQuote(typed: string, textBefore: string): string | null {
+    if (typography.quotes === "off") return null;
+    const prev = textBefore.slice(-1);
+    const opening = prev === "" || OPENS_AFTER.test(prev);
+    if (typed === "'") return opening ? "‘" : "’";
+    if (typography.quotes === "curly") return opening ? "“" : "”";
+    // Angular: track which quotes are still open in this paragraph.
+    const stack: string[] = [];
+    for (const ch of textBefore) {
+        if (ch === "«" || ch === "“") stack.push(ch);
+        else if ((ch === "»" || ch === "”") && stack.length) stack.pop();
+    }
+    const top = stack[stack.length - 1];
+    if (opening) return top === "«" ? "“" : "«";
+    return top === "“" ? "”" : "»";
+}
+
+/// Implemented with `handleTextInput` (input rules are disabled). Nothing is
+/// changed inside code blocks or inline code.
+export const SfSmartTypography = Extension.create({
+    name: "sfSmartTypography",
+
+    addProseMirrorPlugins() {
+        return [
+            new Plugin({
+                key: new PluginKey("sfSmartTypography"),
+                props: {
+                    handleTextInput(view, from, to, text) {
+                        if (text.length !== 1) return false;
+                        const { state } = view;
+                        const $from = state.doc.resolve(from);
+                        if ($from.parent.type.spec.code) return false;
+                        if ($from.marks().some((m) => m.type.spec.code)) return false;
+                        const blockStart = from - $from.parentOffset;
+                        const before = state.doc.textBetween(blockStart, from, undefined, "￼");
+
+                        if (text === '"' || text === "'") {
+                            const q = smartQuote(text, before);
+                            if (!q) return false;
+                            view.dispatch(state.tr.insertText(q, from, to));
+                            return true;
+                        }
+                        if (text === "." && typography.ellipsis && from === to && before.endsWith("..")) {
+                            view.dispatch(state.tr.insertText("…", from - 2, to));
+                            return true;
+                        }
+                        if (text === " " && typography.dialogueDash && from === to && before === "-") {
+                            view.dispatch(state.tr.insertText("—", from - 1, to));
+                            return true;
+                        }
+                        return false;
+                    },
+                },
+            }),
+        ];
+    },
+});
+
+// ---------------------------------------------------------------------------
+// Comment anchors
+// ---------------------------------------------------------------------------
+
+/// The anchor of a margin comment: a mark carrying the comment id. Several
+/// comments may overlap, so the mark does not exclude itself; it does not
+/// grow when typing at its edges.
+export const SfComment = Mark.create({
+    name: "comment",
+    excludes: "",
+    inclusive: false,
+
+    addAttributes() {
+        return {
+            id: {
+                default: null,
+                parseHTML: (el) => (el as HTMLElement).getAttribute("data-comment-id"),
+                renderHTML: (attrs) => ({ "data-comment-id": String(attrs.id ?? "") }),
+            },
+        };
+    },
+
+    parseHTML() {
+        return [{ tag: "span[data-comment-id]" }];
+    },
+
+    renderHTML({ HTMLAttributes }) {
+        return ["span", mergeAttributes(HTMLAttributes, { class: "sf-comment" }), 0];
     },
 });
 

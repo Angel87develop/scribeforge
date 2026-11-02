@@ -8,6 +8,7 @@
 import { useEffect, useState } from "react";
 import type { EditorApi, FormatState } from "./RichTextEditor";
 import "../styles/paragraph-dialog.css";
+import { t } from "../i18n";
 
 interface Props {
     editorApi: EditorApi | null;
@@ -84,48 +85,48 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
             if (raw.trim() === "") continue;
             const v = parseFloat(raw);
             if (!Number.isFinite(v) || v < 0) {
-                onError(`"${label}" must be a non-negative number.`);
+                onError(t("“{field}” must be a non-negative number.", { field: t(label) }));
                 return;
             }
         }
         const patch: Parameters<EditorApi["applyParagraphAttrs"]>[0] = {};
         const lh = lineHeight.trim() === "" ? null : num(lineHeight);
         if (lh === null && lineHeight.trim() !== "") {
-            onError("Line height must be a number.");
+            onError(t("Line height must be a number."));
             return;
         }
         if (lh !== null && (lh < 0.5 || lh > 5)) {
-            onError("Line height must be between 0.5 and 5.");
+            onError(t("Line height must be between 0.5 and 5."));
             return;
         }
         if (lh !== null) patch.line_height = lh;
         const sb = spaceBefore.trim() === "" ? null : num(spaceBefore);
         if (sb === null && spaceBefore.trim() !== "") {
-            onError("Space before must be a non-negative number.");
+            onError(t("Space before must be a non-negative number."));
             return;
         }
         if (sb !== null) patch.space_before = sb;
         const sa = spaceAfter.trim() === "" ? null : num(spaceAfter);
         if (sa === null && spaceAfter.trim() !== "") {
-            onError("Space after must be a non-negative number.");
+            onError(t("Space after must be a non-negative number."));
             return;
         }
         if (sa !== null) patch.space_after = sa;
         const il = indentLeft.trim() === "" ? null : num(indentLeft);
         if (il === null && indentLeft.trim() !== "") {
-            onError("Indent left must be a non-negative number.");
+            onError(t("Indent left must be a non-negative number."));
             return;
         }
         if (il !== null) patch.indent_left = il;
         const ir = indentRight.trim() === "" ? null : num(indentRight);
         if (ir === null && indentRight.trim() !== "") {
-            onError("Indent right must be a non-negative number.");
+            onError(t("Indent right must be a non-negative number."));
             return;
         }
         if (ir !== null) patch.indent_right = ir;
         const fi = indentFirst.trim() === "" ? null : num(indentFirst);
         if (fi === null && indentFirst.trim() !== "") {
-            onError("First-line indent must be a non-negative number.");
+            onError(t("First-line indent must be a non-negative number."));
             return;
         }
         if (fi !== null) patch.indent_first = fi;
@@ -139,11 +140,11 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
         <div className="overlay-root" onClick={onClose}>
             <div className="dialog" style={{ minWidth: 380 }} onClick={(e) => e.stopPropagation()}>
                 <div className="dialog-header">
-                    <span className="dialog-title">Paragraph Formatting</span>
+                    <span className="dialog-title">{t("Paragraph Formatting")}</span>
                 </div>
                 <div className="dialog-body">
                     <div className="pf-field">
-                        <label>Alignment</label>
+                        <label>{t("Alignment")}</label>
                         <div className="pf-align-row">
                             {(["left", "center", "right", "justify"] as const).map((a) => (
                                 <button
@@ -159,7 +160,7 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
                     </div>
 
                     <div className="pf-field">
-                        <label htmlFor="pf-lh">Line height</label>
+                        <label htmlFor="pf-lh">{t("Line height")}</label>
                         <div className="pf-row">
                             <select
                                 id="pf-lh"
@@ -169,7 +170,7 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
                                 <option value="">—</option>
                                 {LINE_HEIGHTS.map((l) => (
                                     <option key={l.value} value={String(l.value)}>
-                                        {l.label}
+                                        {t(l.label)}
                                     </option>
                                 ))}
                             </select>
@@ -178,7 +179,7 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
                                 min={0.5}
                                 max={5}
                                 step={0.05}
-                                placeholder="custom"
+                                placeholder={t("custom")}
                                 value={LINE_HEIGHTS.some((l) => String(l.value) === lineHeight) ? "" : lineHeight}
                                 onChange={(e) => setLineHeight(e.target.value)}
                             />
@@ -187,7 +188,7 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
 
                     <div className="pf-grid">
                         <div className="pf-field">
-                            <label htmlFor="pf-sb">Space before (pt)</label>
+                            <label htmlFor="pf-sb">{t("Space before (pt)")}</label>
                             <input
                                 id="pf-sb"
                                 type="number"
@@ -199,7 +200,7 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
                             />
                         </div>
                         <div className="pf-field">
-                            <label htmlFor="pf-sa">Space after (pt)</label>
+                            <label htmlFor="pf-sa">{t("Space after (pt)")}</label>
                             <input
                                 id="pf-sa"
                                 type="number"
@@ -211,7 +212,7 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
                             />
                         </div>
                         <div className="pf-field">
-                            <label htmlFor="pf-il">Indent left (pt)</label>
+                            <label htmlFor="pf-il">{t("Indent left (pt)")}</label>
                             <input
                                 id="pf-il"
                                 type="number"
@@ -223,7 +224,7 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
                             />
                         </div>
                         <div className="pf-field">
-                            <label htmlFor="pf-ir">Indent right (pt)</label>
+                            <label htmlFor="pf-ir">{t("Indent right (pt)")}</label>
                             <input
                                 id="pf-ir"
                                 type="number"
@@ -235,7 +236,7 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
                             />
                         </div>
                         <div className="pf-field">
-                            <label htmlFor="pf-fi">First-line indent (pt)</label>
+                            <label htmlFor="pf-fi">{t("First-line indent (pt)")}</label>
                             <input
                                 id="pf-fi"
                                 type="number"
@@ -249,20 +250,18 @@ export function ParagraphFormatDialog({ editorApi, format, onClose, onError }: P
                     </div>
 
                     <p className="pf-note">
-                        Applies to the paragraph at the cursor (or every paragraph in the
-                        selection). New paragraphs inherit the formatting of the previous
-                        paragraph. Values persist in the project file.
+                        {t("Applies to the paragraph at the cursor (or every paragraph in the selection). New paragraphs inherit the formatting of the previous paragraph. Values persist in the project file.")}
                     </p>
                 </div>
                 <div className="dialog-footer">
-                    <button type="button" onClick={() => apply(true)} title="Clear all paragraph formatting">
-                        Reset
+                    <button type="button" onClick={() => apply(true)} title={t("Clear all paragraph formatting")}>
+                        {t("Reset")}
                     </button>
                     <button type="button" onClick={onClose}>
-                        Cancel
+                        {t("Cancel")}
                     </button>
                     <button type="button" className="primary" onClick={() => apply(false)}>
-                        Apply
+                        {t("Apply")}
                     </button>
                 </div>
             </div>

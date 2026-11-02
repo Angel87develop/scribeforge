@@ -1,7 +1,9 @@
 /* Binder tree styling. */
 
 .binder-root {
-    width: var(--binder-width, 240px);
+    /* Fills the resizable wrapper set by the workspace. */
+    width: 100%;
+    min-width: 0;
     background: var(--bg-sidebar);
     border-right: 1px solid var(--border);
     display: flex;
@@ -76,6 +78,21 @@
 }
 .binder-row.dragging {
     opacity: 0.4;
+}
+/* Drop indicators: a line above/below the row to reorder, an outline to
+   drop inside it (shared with the outliner rows). */
+.binder-row.drop-before,
+.outliner-row.drop-before {
+    box-shadow: inset 0 2px 0 var(--accent);
+}
+.binder-row.drop-after,
+.outliner-row.drop-after {
+    box-shadow: inset 0 -2px 0 var(--accent);
+}
+.binder-row.drop-into,
+.outliner-row.drop-into {
+    background: var(--bg-sidebar-hover);
+    box-shadow: inset 0 0 0 1px var(--accent);
 }
 
 .binder-chevron {
@@ -198,6 +215,16 @@
 .binder-resizer:hover,
 .binder-resizer.active {
     background: var(--accent);
+}
+/* A wider grab area than the 4px line, spilling over both neighbours. */
+.binder-resizer {
+    position: relative;
+}
+.binder-resizer::before {
+    content: "";
+    position: absolute;
+    inset: 0 -4px;
+    z-index: 5;
 }
 
 /* Chevron wrapper; for documents with sub-documents it is the toggle. */

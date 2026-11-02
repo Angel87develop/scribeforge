@@ -90,7 +90,7 @@
 
 .rt-editor:empty::before,
 .rt-editor p:only-child:empty::before {
-    content: "Start writing…";
+    content: var(--editor-placeholder, "Start writing…");
     color: var(--text-muted);
     font-style: italic;
     pointer-events: none;

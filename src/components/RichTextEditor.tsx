@@ -10,8 +10,15 @@
 ///   `onTransaction`), not by polling `document.queryCommandState`.
 /// - Content is converted to/from the Rust `RichDoc` model only at the
 ///   boundaries (open document, debounced autosave, flush on unmount/switch).
+///   Only edits are pushed back: an editor that is remounted after the text
+///   changed elsewhere (find and replace, restoring a snapshot) never writes
+///   its stale copy over the new one.
+/// - Writing aids: spell checking with a suggestions menu on right-click,
+///   smart typography, margin comments (when the parent passes `comments`)
+///   and typewriter scrolling (from the preferences).
+/// - `[[wiki links]]` to other documents, with a title list while typing.
 
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useEditor, EditorContent } from "@tiptap/react";
 import Color from "@tiptap/extension-color";
 import FontFamily from "@tiptap/extension-font-family";
@@ -21,10 +28,18 @@ import TextStyle from "@tiptap/extension-text-style";
 import Underline from "@tiptap/extension-underline";
 import StarterKit from "@tiptap/starter-kit";
 import type { JSONContent } from "@tiptap/core";
-import type { ParaAttrs, RichDoc } from "../services/api";
+import { api, type CommentDto, type ParaAttrs, type RichDoc } from "../services/api";
+import { usePreferences } from "../services/preferences";
+import { CommentMargin } from "./CommentMargin";
 import { pmToRichDoc, richDocToPm } from "./RichDocConversion";
-import { SfEmDash, SfFontSize, SfParagraphAttrs } from "./SfExtensions";
+import { SfComment, SfEmDash, SfFontSize, SfParagraphAttrs, SfSmartTypography } from "./SfExtensions";
+import { acceptWord, misspelledAt, SfSpellcheck } from "./Spellcheck";
+import { acceptLink, onLinkQuery, SfWikiLinks, type LinkQuery } from "./WikiLinks";
+import { DocIcon } from "./DocIcons";
+import { endsInSplitWord, looksHardWrapped, looksLikeLine, unwrapPlainText, wrapJoins } from "./LineJoin";
 import "../styles/editor.css";
+import "../styles/writing.css";
+import { t } from "../i18n";
 
 // ---------------------------------------------------------------------------
 // Format state — what the toolbar reads
@@ -105,6 +120,13 @@ export interface EditorApi {
     applyParagraphAttrs: (attrs: ParaAttrs) => void;
     resetParagraphAttrs: () => void;
     getParagraphAttrs: () => ParaAttrs;
+    /** Anchor a new margin comment to the selection; null when nothing is
+     *  selected or the editor has no comment margin. */
+    addComment: () => string | null;
+    /** Join paragraphs that are really lines of text cut at a fixed width
+     *  (pasted from a PDF), in the selection or the whole document. Returns
+     *  how many line breaks were removed. */
+    joinBrokenLines: () => number;
     focus: () => void;
     flush: () => void;
 }
@@ -125,6 +147,9 @@ interface Props {
     registerFormatState?: (state: FormatState) => void;
     /** Called when this editor gains focus (for split-pane focus tracking). */
     onFocused?: (paneId: string) => void;
+    /** Margin comments of this document; enables the comment margin. */
+    comments?: CommentDto[];
+    onCommentsChange?: (comments: CommentDto[]) => void;
 }
 
 function computeFormatState(editor: NonNullable<ReturnType<typeof useEditor>>): FormatState {
@@ -188,6 +213,8 @@ export function RichTextEditor({
     registerApi,
     registerFormatState,
     onFocused,
+    comments,
+    onCommentsChange,
 }: Props) {
     // Refs so the Tiptap event callbacks always see the latest handlers
     // without forcing the editor instance to be recreated.
@@ -200,23 +227,69 @@ export function RichTextEditor({
     const paneIdRef = useRef(paneId);
     paneIdRef.current = paneId;
 
+    const commentsRef = useRef(comments);
+    commentsRef.current = comments;
+    const onCommentsChangeRef = useRef(onCommentsChange);
+    onCommentsChangeRef.current = onCommentsChange;
+    const [activeComment, setActiveComment] = useState<string | null>(null);
+    const commentsOn = comments !== undefined && !!onCommentsChange;
+    const commentsOnRef = useRef(commentsOn);
+    commentsOnRef.current = commentsOn;
+
+    const { prefs } = usePreferences();
+    const typewriter = !!prefs?.editor.typewriter_mode;
+    const typewriterRef = useRef(typewriter);
+    typewriterRef.current = typewriter;
+    const hostRef = useRef<HTMLDivElement>(null);
+    const rowRef = useRef<HTMLDivElement>(null);
+    const pointerAtRef = useRef(0);
+
+    const [spellMenu, setSpellMenu] = useState<SpellMenuState | null>(null);
+    const [linkQuery, setLinkQuery] = useState<LinkQuery | null>(null);
+
     const debounceRef = useRef<number | null>(null);
+    const dirtyRef = useRef(false);
     const editorHolder = useRef<ReturnType<typeof useEditor>>(null);
 
     const initialPm = useMemo<JSONContent>(() => richDocToPm(initialContent), [initialContent]);
 
     function pushNow() {
         const editor = editorHolder.current;
-        if (!editor) return;
+        if (debounceRef.current !== null) {
+            window.clearTimeout(debounceRef.current);
+            debounceRef.current = null;
+        }
+        if (!editor || !dirtyRef.current) return;
+        dirtyRef.current = false;
         const rich = pmToRichDoc(editor.getJSON());
         const words = countWordsRich(rich);
         onContentChangedRef.current(rich, words);
     }
 
     function schedulePush() {
+        dirtyRef.current = true;
         if (debounceRef.current !== null) window.clearTimeout(debounceRef.current);
         debounceRef.current = window.setTimeout(pushNow, 800);
     }
+
+    /** Typewriter mode: scroll so the caret sits mid-height. Skipped right
+     *  after a click, so clicking a line does not make the text jump. */
+    const centerCaret = useCallback(() => {
+        const editor = editorHolder.current;
+        if (!typewriterRef.current || !editor || !editor.isFocused) return;
+        if (Date.now() - pointerAtRef.current < 400) return;
+        const scroller = scrollParent(hostRef.current);
+        if (!scroller) return;
+        let coords: { top: number; bottom: number };
+        try {
+            coords = editor.view.coordsAtPos(editor.state.selection.head);
+        } catch {
+            return;
+        }
+        const rect = scroller.getBoundingClientRect();
+        const delta = (coords.top + coords.bottom) / 2 - (rect.top + rect.height / 2);
+        if (Math.abs(delta) > 1) scroller.scrollTop += delta;
+    }, []);
 
     const editor = useEditor({
         extensions: [
@@ -231,6 +304,10 @@ export function RichTextEditor({
             Highlight.configure({ multicolor: true }),
             SfParagraphAttrs,
             SfEmDash,
+            SfSmartTypography,
+            SfComment,
+            SfSpellcheck,
+            SfWikiLinks,
         ],
         // No Markdown: typing "# ", "**x**", "- ", "> ", "```"… or pasting
         // Markdown text must stay literal text, never become formatting.
@@ -239,17 +316,31 @@ export function RichTextEditor({
         content: initialPm,
         editable,
         autofocus: false,
+        editorProps: {
+            // The WebView checker would draw a second underline.
+            attributes: { spellcheck: "false" },
+            // Text copied from a PDF arrives as one line per row; rejoin it
+            // so it does not become one paragraph per line.
+            transformPastedText: (text) => unwrapPlainText(text),
+        },
         onFocus: () => {
             onFocusedRef.current?.(paneIdRef.current);
+            requestAnimationFrame(centerCaret);
         },
         onSelectionUpdate: ({ editor }) => {
             registerFormatStateRef.current?.(computeFormatState(editor));
+            if (commentsOnRef.current) {
+                const mark = editor.state.selection.$from.marks().find((m) => m.type.name === "comment");
+                if (mark?.attrs.id) setActiveComment(String(mark.attrs.id));
+            }
+            requestAnimationFrame(centerCaret);
         },
         onTransaction: ({ editor }) => {
             registerFormatStateRef.current?.(computeFormatState(editor));
         },
         onUpdate: () => {
             schedulePush();
+            requestAnimationFrame(centerCaret);
         },
     });
 
@@ -257,15 +348,22 @@ export function RichTextEditor({
 
     // Flush pending edits when unmounting (document switch or app close).
     useEffect(() => {
-        return () => {
-            if (debounceRef.current !== null) {
-                window.clearTimeout(debounceRef.current);
-                debounceRef.current = null;
-            }
-            pushNow();
-        };
+        return () => pushNow();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
+
+    // The "[[" title list of this editor.
+    useEffect(() => {
+        if (!editor) return;
+        const view = editor.view;
+        onLinkQuery(view, setLinkQuery);
+        return () => onLinkQuery(view, null);
+    }, [editor]);
+
+    // Turning typewriter mode on centres the current line at once.
+    useEffect(() => {
+        if (typewriter) requestAnimationFrame(centerCaret);
+    }, [typewriter, centerCaret]);
 
     // Expose the imperative API to the parent.
     useEffect(() => {
@@ -365,10 +463,89 @@ export function RichTextEditor({
             },
             resetParagraphAttrs: () => editor.commands.resetParagraphAttrs(),
             getParagraphAttrs: () => computeFormatState(editor).paragraphAttrs,
+            addComment: () => {
+                const type = editor.schema.marks.comment;
+                if (!editor.isEditable || !commentsOnRef.current || !type) return null;
+                let { from, to } = editor.state.selection;
+                if (from === to) {
+                    // A selection made a moment ago (double-click) may not
+                    // have reached the editor state yet; read the DOM's.
+                    const dom = window.getSelection();
+                    const view = editor.view;
+                    if (dom && !dom.isCollapsed && dom.anchorNode && dom.focusNode && view.dom.contains(dom.anchorNode)) {
+                        const a = view.posAtDOM(dom.anchorNode, dom.anchorOffset);
+                        const b = view.posAtDOM(dom.focusNode, dom.focusOffset);
+                        [from, to] = [Math.min(a, b), Math.max(a, b)];
+                    }
+                }
+                if (from === to) return null;
+                const id = crypto.randomUUID();
+                editor.view.dispatch(editor.state.tr.addMark(from, to, type.create({ id })));
+                const now = new Date().toISOString();
+                onCommentsChangeRef.current?.([
+                    ...(commentsRef.current ?? []),
+                    { id, text: "", resolved: false, created_at: now, modified_at: now },
+                ]);
+                setActiveComment(id);
+                return id;
+            },
+            joinBrokenLines: () => {
+                if (!editor.isEditable) return 0;
+                const { state } = editor;
+                const { from, to, empty } = state.selection;
+                // Runs of consecutive sibling paragraphs. A paragraph too
+                // long to be a single line is a real one and ends a run.
+                type Para = { pos: number; text: string; parent: unknown; index: number };
+                const runs: Para[][] = [];
+                let run: Para[] = [];
+                state.doc.nodesBetween(empty ? 0 : from, empty ? state.doc.content.size : to, (node, pos, parent, index) => {
+                    if (node.type.name !== "paragraph") return true;
+                    const p = { pos, text: node.textContent, parent, index };
+                    const prev = run[run.length - 1];
+                    const continues = prev && prev.parent === parent && prev.index + 1 === index;
+                    if (!continues || !looksLikeLine(p.text)) {
+                        if (run.length > 1) runs.push(run);
+                        run = [];
+                    }
+                    if (looksLikeLine(p.text)) run.push(p);
+                    return false;
+                });
+                if (run.length > 1) runs.push(run);
+
+                const tr = state.tr;
+                let joined = 0;
+                // Work backwards so earlier positions stay valid.
+                for (const r of runs.reverse()) {
+                    const lines = r.map((p) => p.text);
+                    if (!looksHardWrapped(lines)) continue;
+                    const joins = wrapJoins(lines);
+                    for (let i = r.length - 2; i >= 0; i--) {
+                        if (!joins[i]) continue;
+                        const a = tr.doc.nodeAt(r[i].pos);
+                        if (!a) continue;
+                        const textEnd = r[i].pos + 1 + a.content.size;
+                        tr.join(r[i].pos + a.nodeSize);
+                        if (endsInSplitWord(r[i].text, r[i + 1].text)) {
+                            tr.delete(textEnd - 1, textEnd);
+                        } else if (!/\s$/.test(r[i].text) && !/^\s/.test(r[i + 1].text)) {
+                            tr.insertText(" ", textEnd);
+                        }
+                        joined++;
+                    }
+                }
+                if (joined > 0) editor.view.dispatch(tr.scrollIntoView());
+                return joined;
+            },
             focus: () => editor.commands.focus(),
             flush: pushNow,
         });
     }, [editor, registerApi]);
+
+    // Follow read-only changes (e.g. the same document opened in the other
+    // pane) without recreating the editor or emitting a content update.
+    useEffect(() => {
+        if (editor && editor.isEditable !== editable) editor.setEditable(editable, false);
+    }, [editor, editable]);
 
     // Announce the initial format state once the editor exists.
     useEffect(() => {
@@ -377,11 +554,174 @@ export function RichTextEditor({
         }
     }, [editor]);
 
+    // Right-click on an underlined word: suggestions, add to dictionary,
+    // ignore. Anywhere else the normal menu shows.
+    function onContextMenu(e: React.MouseEvent) {
+        if (!editor) return;
+        const at = editor.view.posAtCoords({ left: e.clientX, top: e.clientY });
+        const hit = at ? misspelledAt(editor.state, at.pos) : null;
+        if (!hit) return;
+        e.preventDefault();
+        setSpellMenu({ x: e.clientX, y: e.clientY, ...hit, suggestions: null });
+        api.spellSuggest(hit.word)
+            .then((s) => setSpellMenu((m) => (m && m.from === hit.from ? { ...m, suggestions: s } : m)))
+            .catch(() => setSpellMenu((m) => (m && m.from === hit.from ? { ...m, suggestions: [] } : m)));
+    }
+
+    function replaceWord(menu: SpellMenuState, word: string) {
+        setSpellMenu(null);
+        if (!editor || !editor.isEditable) return;
+        // Only if the word is still where it was when the menu opened.
+        if (editor.state.doc.textBetween(menu.from, menu.to) !== menu.word) return;
+        editor.view.dispatch(editor.state.tr.insertText(word, menu.from, menu.to));
+        editor.commands.focus();
+    }
+
+    const showMargin = commentsOn && !!editor && (comments?.length ?? 0) > 0;
+
     return (
-        <div className="rt-editor-host">
-            <EditorContent editor={editor} className="rt-editor-content" />
+        <div
+            ref={hostRef}
+            className={`rt-editor-host${typewriter ? " typewriter" : ""}${showMargin ? " with-comments" : ""}`}
+            onMouseDown={() => {
+                pointerAtRef.current = Date.now();
+            }}
+            onContextMenu={onContextMenu}
+        >
+            <div ref={rowRef} className="rt-editor-row">
+                <EditorContent editor={editor} className="rt-editor-content" />
+                {showMargin && editor && (
+                    <CommentMargin
+                        editor={editor}
+                        comments={comments ?? []}
+                        onChange={(c) => onCommentsChangeRef.current?.(c)}
+                        activeId={activeComment}
+                        onActivate={setActiveComment}
+                        container={rowRef.current}
+                        readOnly={!editable}
+                    />
+                )}
+            </div>
+            {linkQuery && editor && <LinkList query={linkQuery} editor={editor} />}
+            {spellMenu && (
+                <>
+                    <div
+                        className="ctx-backdrop"
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            setSpellMenu(null);
+                        }}
+                        onContextMenu={(e) => {
+                            e.preventDefault();
+                            setSpellMenu(null);
+                        }}
+                    />
+                    <div className="ctx-menu spell-menu" style={{ left: spellMenu.x, top: spellMenu.y }}>
+                        {spellMenu.suggestions === null && <div className="ctx-item disabled">{t("Looking for suggestions…")}</div>}
+                        {spellMenu.suggestions?.length === 0 && <div className="ctx-item disabled">{t("No suggestions")}</div>}
+                        {spellMenu.suggestions?.map((s) => (
+                            <button
+                                key={s}
+                                className="ctx-item spell-suggestion"
+                                disabled={!editable}
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => replaceWord(spellMenu, s)}
+                            >
+                                {s}
+                            </button>
+                        ))}
+                        <div className="ctx-sep" />
+                        <button
+                            className="ctx-item"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                                const w = spellMenu.word;
+                                setSpellMenu(null);
+                                api.addToDictionary(w)
+                                    .then(() => acceptWord(w, "dictionary"))
+                                    .catch(() => undefined);
+                            }}
+                        >
+                            {t("Add “{word}” to Dictionary", { word: spellMenu.word })}
+                        </button>
+                        <button
+                            className="ctx-item"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                                acceptWord(spellMenu.word, "ignore");
+                                setSpellMenu(null);
+                            }}
+                        >
+                            {t("Ignore")}
+                        </button>
+                    </div>
+                </>
+            )}
         </div>
     );
+}
+
+/** The list of document titles shown after typing "[[". */
+function LinkList({ query, editor }: { query: LinkQuery; editor: NonNullable<ReturnType<typeof useEditor>> }) {
+    let pos: { left: number; top: number };
+    try {
+        const c = editor.view.coordsAtPos(query.from);
+        pos = { left: c.left, top: c.bottom + 4 };
+    } catch {
+        return null;
+    }
+    return (
+        <div className="link-list" style={{ left: pos.left, top: pos.top }} role="listbox" aria-label={t("Link to document")}>
+            {query.items.length === 0 ? (
+                <div className="link-list-empty">
+                    {t("No document called “{title}”. Close with ]] to link it anyway.", { title: query.query })}
+                </div>
+            ) : (
+                query.items.map((t, i) => (
+                    <button
+                        key={t.id}
+                        type="button"
+                        role="option"
+                        aria-selected={i === query.index}
+                        className={`link-list-item${i === query.index ? " active" : ""}`}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            acceptLink(editor.view, t);
+                        }}
+                    >
+                        <DocIcon
+                            id={t.sheet === "character" ? "character:sheet" : t.sheet === "place" ? "location:sheet" : "notes:grey"}
+                            size={14}
+                        />
+                        {t.title}
+                    </button>
+                ))
+            )}
+            <div className="link-list-hint">{t("↑↓ choose · Enter insert · Esc close")}</div>
+        </div>
+    );
+}
+
+interface SpellMenuState {
+    x: number;
+    y: number;
+    from: number;
+    to: number;
+    word: string;
+    /** Null while loading. */
+    suggestions: string[] | null;
+}
+
+/** The nearest element that scrolls vertically (the editor host itself in
+ *  the normal view, the Scrivenings list or composition page otherwise). */
+function scrollParent(el: HTMLElement | null): HTMLElement | null {
+    let cur = el;
+    while (cur) {
+        const oy = getComputedStyle(cur).overflowY;
+        if ((oy === "auto" || oy === "scroll") && cur.scrollHeight > cur.clientHeight) return cur;
+        cur = cur.parentElement;
+    }
+    return null;
 }
 
 // ---------------------------------------------------------------------------

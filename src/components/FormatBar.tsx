@@ -17,11 +17,13 @@ import {
     IconAlignLeft,
     IconAlignRight,
     IconBold,
+    IconComment,
     IconItalic,
     IconStrike,
     IconUnderline,
 } from "./Icons";
 import "../styles/formatbar.css";
+import { t } from "../i18n";
 
 interface Props {
     editorApi: EditorApi | null;
@@ -30,6 +32,8 @@ interface Props {
     onParagraphFormatting: () => void;
     /** Called with the hex color the user picks in the color popover. */
     onColorChanged?: (hex: string | null) => void;
+    /** Anchors a margin comment to the selection. */
+    onAddComment?: () => void;
 }
 
 const FONTS = [
@@ -88,7 +92,7 @@ function Btn({
     );
 }
 
-export function FormatBar({ editorApi, format, onParagraphFormatting, onColorChanged }: Props) {
+export function FormatBar({ editorApi, format, onParagraphFormatting, onColorChanged, onAddComment }: Props) {
     const f = format ?? null;
     const hasEditor = !!editorApi;
     const [colorOpen, setColorOpen] = useState(false);
@@ -118,7 +122,7 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
     const alignActive = (a: string) => f?.align === a;
 
     return (
-        <div className="formatbar" role="toolbar" aria-label="Format">
+        <div className="formatbar" role="toolbar" aria-label={t("Format")}>
             {/* Paragraph style */}
             <select
                 className="fb-select fb-style-select"
@@ -127,21 +131,21 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
                 onChange={(e) => {
                     editorApi?.applyBlockStyle(e.target.value);
                 }}
-                title="Paragraph style"
+                title={t("Paragraph style")}
             >
-                <option value="">No Style</option>
-                <option value="attribution">Attribution</option>
-                <option value="block_quote">Block Quote</option>
-                <option value="caption">Caption</option>
-                <option value="centered">Centered Text</option>
-                <option value="code_block">Code Block</option>
-                <option value="heading_1">Heading 1</option>
-                <option value="heading_2">Heading 2</option>
-                <option value="heading_3">Heading 3</option>
-                <option value="title">Title</option>
-                <option value="subtitle">Subtitle</option>
-                <option value="verse">Verse</option>
-                <option value="paragraph">Normal Paragraph</option>
+                <option value="">{t("No Style")}</option>
+                <option value="attribution">{t("Attribution")}</option>
+                <option value="block_quote">{t("Block Quote")}</option>
+                <option value="caption">{t("Caption")}</option>
+                <option value="centered">{t("Centered Text")}</option>
+                <option value="code_block">{t("Code Block")}</option>
+                <option value="heading_1">{t("Heading 1")}</option>
+                <option value="heading_2">{t("Heading 2")}</option>
+                <option value="heading_3">{t("Heading 3")}</option>
+                <option value="title">{t("Title")}</option>
+                <option value="subtitle">{t("Subtitle")}</option>
+                <option value="verse">{t("Verse")}</option>
+                <option value="paragraph">{t("Normal Paragraph")}</option>
             </select>
 
             <div className="fb-sep" />
@@ -158,15 +162,15 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
                     // reset to empty so the same style can be re-applied
                     e.target.value = "";
                 }}
-                title="Character style"
+                title={t("Character style")}
             >
-                <option value="">Character…</option>
-                <option value="emphasis">Emphasis</option>
-                <option value="strong">Strong Emphasis</option>
-                <option value="code">Code Span</option>
-                <option value="underline">Underline</option>
-                <option value="strikethrough">Strikethrough</option>
-                <option value="highlight">Highlight</option>
+                <option value="">{t("Character…")}</option>
+                <option value="emphasis">{t("Emphasis")}</option>
+                <option value="strong">{t("Strong Emphasis")}</option>
+                <option value="code">{t("Code Span")}</option>
+                <option value="underline">{t("Underline")}</option>
+                <option value="strikethrough">{t("Strikethrough")}</option>
+                <option value="highlight">{t("Highlight")}</option>
             </select>
 
             <div className="fb-sep" />
@@ -180,9 +184,9 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
                     if (e.target.value) editorApi?.setFontFamily(e.target.value);
                     else editorApi?.setFontFamily("");
                 }}
-                title="Font family"
+                title={t("Font family")}
             >
-                <option value="">Default</option>
+                <option value="">{t("Default")}</option>
                 {FONTS.map((font) => (
                     <option key={font} value={font} style={{ fontFamily: font }}>
                         {font}
@@ -211,7 +215,7 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
                     }
                 }}
                 list="fb-sizes"
-                title="Font size (pt)"
+                title={t("Font size (pt)")}
             />
             <datalist id="fb-sizes">
                 {SIZES.map((s) => (
@@ -222,32 +226,32 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
             <div className="fb-sep" />
 
             {/* Bold / Italic / Underline / Strike / Code */}
-            <Btn title="Bold (Ctrl+B)" active={f?.bold} disabled={!hasEditor} onClick={() => editorApi?.setBold()}>
+            <Btn title={t("Bold (Ctrl+B)")} active={f?.bold} disabled={!hasEditor} onClick={() => editorApi?.setBold()}>
                 <IconBold size={15} />
             </Btn>
-            <Btn title="Italic (Ctrl+I)" active={f?.italic} disabled={!hasEditor} onClick={() => editorApi?.setItalic()}>
+            <Btn title={t("Italic (Ctrl+I)")} active={f?.italic} disabled={!hasEditor} onClick={() => editorApi?.setItalic()}>
                 <IconItalic size={15} />
             </Btn>
-            <Btn title="Underline (Ctrl+U)" active={f?.underline} disabled={!hasEditor} onClick={() => editorApi?.setUnderline()}>
+            <Btn title={t("Underline (Ctrl+U)")} active={f?.underline} disabled={!hasEditor} onClick={() => editorApi?.setUnderline()}>
                 <IconUnderline size={15} />
             </Btn>
-            <Btn title="Strikethrough" active={f?.strike} disabled={!hasEditor} onClick={() => editorApi?.setStrike()}>
+            <Btn title={t("Strikethrough")} active={f?.strike} disabled={!hasEditor} onClick={() => editorApi?.setStrike()}>
                 <IconStrike size={15} />
             </Btn>
 
             <div className="fb-sep" />
 
             {/* Alignment */}
-            <Btn title="Align Left (Ctrl+L)" active={alignActive("left")} disabled={!hasEditor} onClick={() => editorApi?.setAlign("left")}>
+            <Btn title={t("Align Left (Ctrl+L)")} active={alignActive("left")} disabled={!hasEditor} onClick={() => editorApi?.setAlign("left")}>
                 <IconAlignLeft size={15} />
             </Btn>
-            <Btn title="Align Center (Ctrl+E)" active={alignActive("center")} disabled={!hasEditor} onClick={() => editorApi?.setAlign("center")}>
+            <Btn title={t("Align Center (Ctrl+E)")} active={alignActive("center")} disabled={!hasEditor} onClick={() => editorApi?.setAlign("center")}>
                 <IconAlignCenter size={15} />
             </Btn>
-            <Btn title="Align Right (Ctrl+R)" active={alignActive("right")} disabled={!hasEditor} onClick={() => editorApi?.setAlign("right")}>
+            <Btn title={t("Align Right (Ctrl+R)")} active={alignActive("right")} disabled={!hasEditor} onClick={() => editorApi?.setAlign("right")}>
                 <IconAlignRight size={15} />
             </Btn>
-            <Btn title="Justify (Ctrl+J)" active={alignActive("justify")} disabled={!hasEditor} onClick={() => editorApi?.setAlign("justify")}>
+            <Btn title={t("Justify (Ctrl+J)")} active={alignActive("justify")} disabled={!hasEditor} onClick={() => editorApi?.setAlign("justify")}>
                 <IconAlignJustify size={15} />
             </Btn>
 
@@ -258,7 +262,7 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
                 <button
                     type="button"
                     className="fb-color-btn"
-                    title="Text color"
+                    title={t("Text color")}
                     disabled={!hasEditor}
                     onMouseDown={(e) => {
                         e.preventDefault();
@@ -320,7 +324,7 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
                                     setColorOpen(false);
                                 }}
                             >
-                                Reset
+                                {t("Reset")}
                             </button>
                         </div>
                     </div>
@@ -332,7 +336,7 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
                 <button
                     type="button"
                     className="fb-color-btn"
-                    title="Highlight color"
+                    title={t("Highlight color")}
                     disabled={!hasEditor}
                     onMouseDown={(e) => {
                         e.preventDefault();
@@ -373,7 +377,7 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
                                     setHighlightOpen(false);
                                 }}
                             >
-                                Reset
+                                {t("Reset")}
                             </button>
                         </div>
                     </div>
@@ -386,7 +390,7 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
             <button
                 type="button"
                 className="fb-btn"
-                title="Paragraph formatting…"
+                title={t("Paragraph formatting…")}
                 disabled={!hasEditor}
                 onMouseDown={(e) => {
                     e.preventDefault();
@@ -395,6 +399,21 @@ export function FormatBar({ editorApi, format, onParagraphFormatting, onColorCha
             >
                 ¶
             </button>
+            {onAddComment && (
+                <button
+                    type="button"
+                    className="fb-btn"
+                    title={t("Add comment to the selection (Ctrl+Shift+M)")}
+                    aria-label={t("Add comment")}
+                    disabled={!hasEditor}
+                    onMouseDown={(e) => {
+                        e.preventDefault();
+                        onAddComment();
+                    }}
+                >
+                    <IconComment size={15} />
+                </button>
+            )}
         </div>
     );
 }

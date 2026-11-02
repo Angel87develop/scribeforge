@@ -26,8 +26,12 @@ MyProject.scri
 │   └── <uuid>.json          (required)  One file per document.
 ├── assets/
 │   └── <uuid>.<ext>         (optional)  Binary image attachments (PNG/JPEG/GIF/WebP/BMP/SVG).
+├── snapshots/
+│   └── <doc>/<id>.json      (optional)  Snapshots of a document's text.
 ├── metadata/
-│   └── project.json         (required)  Mirror of manifest.config for tooling.
+│   ├── project.json         (required)  Mirror of manifest.config for tooling.
+│   ├── stats.json           (optional)  Words written per day.
+│   └── dictionary.json      (optional)  Personal spelling dictionary.
 └── [future dirs]            research/, backups/ — reserved.
 ```
 
@@ -53,7 +57,9 @@ absolute (`/…`), relative-up (`…/../…`), or contain a Windows drive letter
     "autosave_interval_secs": 30,
     "session_word_goal": 0,
     "project_word_goal": 0,
-    "backup_count": 5
+    "backup_count": 5,
+    "deadline": "2027-03-01",       // optional; YYYY-MM-DD
+    "spell_language": "es"          // "es" | "en" | "es,en" | "off"
   }
 }
 ```
@@ -106,6 +112,16 @@ One JSON object per document:
       "display_height": 180,
       "created_at": "…"
     }
+  ],
+  "word_goal": 2000,                // optional; 0 or absent = no target
+  "comments": [                     // optional; margin comments
+    {
+      "id": "uuid",                 // matches a `comment` mark in content
+      "text": "Too slow here?",
+      "resolved": false,
+      "created_at": "…",
+      "modified_at": "…"
+    }
   ]
 }
 ```
@@ -135,6 +151,19 @@ Properties:
 - Portability: like everything else in the container, assets travel with the
   file; no absolute paths are stored.
 
+## 5b. Writing data
+
+All of these are optional and additive; files written before they existed
+open with empty defaults.
+
+- `snapshots/<document-id>/<snapshot-id>.json` — `{ id, document_id, name,
+  created_at, title, word_count, content }`, where `content` is a RichDoc.
+  Snapshots of a document that no longer exists are skipped on read and
+  never written.
+- `metadata/stats.json` — `{ "days": { "YYYY-MM-DD": { "added": n,
+  "removed": n } } }`, keyed by the writer's local date.
+- `metadata/dictionary.json` — `{ "words": ["Eldoria", …] }`.
+
 ## 6. RichDoc content model
 
 A minimal, editor-agnostic block/span tree:
@@ -142,7 +171,9 @@ A minimal, editor-agnostic block/span tree:
 - **Blocks**: `paragraph`, `heading` (level 1–6), `block_quote`,
   `list_ordered`, `list_unordered`, `code_block`, `divider`.
 - **Spans**: text runs with optional marks.
-- **Marks**: `bold`, `italic`, `underline`, `strikethrough`, `link { href }`.
+- **Marks**: `bold`, `italic`, `underline`, `strikethrough`, `code_span`,
+  `link { href }`, `font_family`, `font_size`, `color`, `highlight`, and
+  `comment { id }` (the anchor of a margin comment; not compiled).
 
 The model maps 1:1 to HTML for the editor UI and to TXT/Markdown for
 compilation, and is the only persisted representation of document text.
@@ -182,3 +213,4 @@ compilation, and is the only persisted representation of document text.
 | Version | App        | Change                                    |
 |---------|------------|-------------------------------------------|
 | 1       | 0.1.0      | Initial format.                            |
+| 1       | 0.1.0      | Additive: snapshots, stats, dictionary, comments, word targets, deadline, spell language. |

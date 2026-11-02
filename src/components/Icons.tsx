@@ -462,3 +462,45 @@ export function IconExpand({ size = 16, className, style }: IconProps) {
         </>
     ));
 }
+
+export function IconComment({ size = 16, className, style }: IconProps) {
+    return svg(size, className, style, (
+        <>
+            <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1.1-4.6A8 8 0 1 1 21 12z" />
+            <path d="M9 10.5h6M9 13.5h4" />
+        </>
+    ));
+}
+
+export function IconCamera({ size = 16, className, style }: IconProps) {
+    return svg(size, className, style, (
+        <>
+            <path d="M4 8h3l2-3h6l2 3h3a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1z" />
+            <circle cx="12" cy="13" r="3.5" />
+        </>
+    ));
+}
+
+export function IconChart({ size = 16, className, style }: IconProps) {
+    return svg(size, className, style, (
+        <>
+            <path d="M4 20V10M10 20V4M16 20v-7M22 20H2" />
+        </>
+    ));
+}
+
+export function IconReplace({ size = 16, className, style }: IconProps) {
+    return svg(size, className, style, (
+        <>
+            <path d="M4 7h11l-3-3M20 17H9l3 3" />
+        </>
+    ));
+}
+
+export function IconCheck({ size = 16, className, style }: IconProps) {
+    return svg(size, className, style, (
+        <>
+            <path d="M4 12.5l5 5L20 6.5" />
+        </>
+    ));
+}

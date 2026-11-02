@@ -10,6 +10,11 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     host: "127.0.0.1",
+    watch: {
+      // Rust sources and build output are handled by the Tauri CLI; watching
+      // them makes Vite trip over files cargo is still writing.
+      ignored: ["**/src-tauri/**"],
+    },
   },
   // Tauri webview can use env vars to target dev or prod.
   envPrefix: ["VITE", "TAURI_"],
