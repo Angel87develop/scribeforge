@@ -10,6 +10,8 @@ use std::path::{Path, PathBuf};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+use uuid::Uuid;
+
 use crate::errors::{AppError, AppResult};
 use crate::format_profiles::FormatSettings;
 
@@ -33,6 +35,9 @@ pub struct Settings {
     /// Default location for new projects. Empty string means "use Documents".
     #[serde(default)]
     pub default_project_dir: String,
+    /// Working on the same project from several computers.
+    #[serde(default)]
+    pub sync: SyncSettings,
 }
 
 impl Default for Settings {
@@ -46,6 +51,7 @@ impl Default for Settings {
             format: FormatSettings::default(),
             recent_projects: Vec::new(),
             default_project_dir: String::new(),
+            sync: SyncSettings::default(),
         }
     }
 }
@@ -169,6 +175,37 @@ impl Default for SavingSettings {
     }
 }
 
+/// How this computer identifies itself to the others that open the same
+/// project from a synced folder (see `sync`).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SyncSettings {
+    /// Random id generated on first run; not derived from the hardware or
+    /// any account. Never changed by the preferences.
+    #[serde(default = "Uuid::nil")]
+    pub device_id: Uuid,
+    /// Name shown on other computers ("open on Laptop"). Empty shows a
+    /// generic "another computer".
+    #[serde(default)]
+    pub device_name: String,
+    #[serde(default = "default_true")]
+    pub warn_open_elsewhere: bool,
+    /// Reload the project when a newer version arrives and nothing here is
+    /// unsaved.
+    #[serde(default = "default_true")]
+    pub auto_reload: bool,
+}
+
+impl Default for SyncSettings {
+    fn default() -> Self {
+        Self {
+            device_id: Uuid::nil(),
+            device_name: String::new(),
+            warn_open_elsewhere: true,
+            auto_reload: true,
+        }
+    }
+}
+
 /// Composition mode (distraction-free full screen) appearance.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CompositionSettings {
@@ -208,6 +245,10 @@ impl Default for CompositionSettings {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RecentProject {
     pub path: PathBuf,
+    /// The same project can live at a different path on each computer, or
+    /// move; the id keeps one entry per project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_id: Option<Uuid>,
     pub name: String,
     pub last_opened: DateTime<Utc>,
 }
@@ -327,22 +368,37 @@ impl Settings {
     }
 
     /// Add or refresh a project in the recent list, capped at `recent_max`.
-    pub fn record_recent(&mut self, path: PathBuf, name: String) {
+    /// An entry for the same project at another path is moved to `path`.
+    pub fn record_recent(&mut self, path: PathBuf, name: String, project_id: Option<Uuid>) {
         let now = Utc::now();
+        self.recent_projects.retain(|r| {
+            r.path == path || project_id.is_none() || r.project_id != project_id
+        });
         if let Some(existing) = self
             .recent_projects
             .iter_mut()
             .find(|r| r.path == path)
         {
             existing.name = name;
+            existing.project_id = project_id;
             existing.last_opened = now;
             return;
         }
-        self.recent_projects.insert(0, RecentProject { path, name, last_opened: now });
+        self.recent_projects.insert(0, RecentProject { path, project_id, name, last_opened: now });
         let cap = self.general.recent_max.max(1);
         if self.recent_projects.len() > cap {
             self.recent_projects.truncate(cap);
         }
+    }
+
+    /// Give this computer its random sync id the first time. Returns true
+    /// when the settings changed and should be saved.
+    pub fn ensure_device_id(&mut self) -> bool {
+        if !self.sync.device_id.is_nil() {
+            return false;
+        }
+        self.sync.device_id = Uuid::new_v4();
+        true
     }
 
     /// Clamp user-editable values to safe ranges and replace invalid ones
@@ -371,6 +427,12 @@ impl Settings {
         if !matches!(e.smart_quotes.as_str(), "angular" | "curly" | "off") {
             e.smart_quotes = default_smart_quotes();
         }
+
+        if !self.default_project_dir.is_empty() && !Path::new(&self.default_project_dir).is_absolute() {
+            self.default_project_dir.clear();
+        }
+        let y = &mut self.sync;
+        y.device_name = y.device_name.trim().chars().filter(|c| !c.is_control()).take(60).collect();
 
         let sv = &mut self.saving;
         sv.autosave_interval_secs = sv.autosave_interval_secs.clamp(5, 3600);

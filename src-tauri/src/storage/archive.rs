@@ -65,7 +65,8 @@ struct DocumentIndex {
 /// 2. Write a `.scri.tmp` archive next to the target.
 /// 3. Re-open the temp archive and verify it parses back.
 /// 4. Atomically replace the target (with Windows fallback).
-/// 5. Prune old backups according to the project config.
+/// 5. Copy it to this computer's backups and prune old ones according to the
+///    project config.
 pub fn write_project_to_path(project: &Project, path: &Path) -> AppResult<()> {
     let target = path.to_path_buf();
     let parent = target
@@ -138,7 +139,7 @@ pub fn write_project_to_path(project: &Project, path: &Path) -> AppResult<()> {
     }))
     .ok()
     {
-        let _ = rotate_backups(&target, backup_count.max(1) as usize);
+        let _ = rotate_backups(&target, project.manifest.project_id, backup_count.max(1) as usize);
     }
 
     // Original was successfully replaced; the one-shot backup is no longer needed.
@@ -432,6 +433,13 @@ pub fn verify_archive<R: Read + Seek>(zip: &mut ZipArchive<R>) -> AppResult<()> 
     Ok(())
 }
 
+/// The project id of a `.scri` file, reading only its manifest.
+pub fn read_project_id(path: &Path) -> AppResult<Uuid> {
+    let file = File::open(path)?;
+    let mut zip = ZipArchive::new(BufReader::new(file))?;
+    Ok(read_manifest(&mut zip)?.project_id)
+}
+
 fn read_manifest<R: Read + Seek>(zip: &mut ZipArchive<R>) -> AppResult<Manifest> {
     let value = read_json_entry(zip, MANIFEST_PATH)?;
     let manifest: Manifest = serde_json::from_value(value)?;
@@ -474,16 +482,14 @@ fn migrate(manifest: &mut Manifest, _documents: &mut HashMap<Uuid, Document>) ->
 // Backups
 // ---------------------------------------------------------------------------
 
-fn rotate_backups(target: &Path, keep: usize) -> AppResult<()> {
-    let parent = match target.parent() {
-        Some(p) => p,
-        None => return Ok(()),
-    };
+/// Copy the freshly written file into this computer's backup folder for the
+/// project (see `sync::local_backups_dir`) and keep the `keep` newest.
+fn rotate_backups(target: &Path, project_id: Uuid, keep: usize) -> AppResult<()> {
     let stem = target
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("project");
-    let backups_dir = parent.join(format!("{stem}.backups"));
+    let backups_dir = crate::sync::local_backups_dir(project_id)?;
     fs::create_dir_all(&backups_dir)?;
 
     // Copy the current file into the backups dir with a timestamp.

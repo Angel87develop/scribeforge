@@ -12,10 +12,12 @@ pub mod project;
 pub mod settings;
 mod state;
 pub mod storage;
+pub mod sync;
 pub mod templates;
 pub mod writing;
 
 use state::AppState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -35,6 +37,8 @@ pub fn run() {
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { .. } = event {
                 log::info!("Window '{}' close requested", window.label());
+                // Save and tell other computers the project is closed here.
+                window.state::<AppState>().release_on_exit();
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -43,7 +47,20 @@ pub fn run() {
             commands::get_template_preview,
             commands::list_recent_projects,
             commands::remove_recent_project,
-            commands::open_existing_file_dialog,
+            commands::pick_project_file,
+            commands::check_project_open,
+            commands::list_conflict_copies,
+            commands::get_sync_status,
+            commands::sync_poll,
+            commands::reload_from_disk,
+            commands::get_sync_conflict,
+            commands::sync_conflict_diff,
+            commands::resolve_sync_conflict,
+            commands::cancel_sync_conflict,
+            commands::trash_conflict_copy,
+            commands::sync_take_over,
+            commands::list_local_backups,
+            commands::restore_local_backup,
             commands::open_project_at_path,
             commands::create_project,
             commands::get_current_project,

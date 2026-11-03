@@ -3176,16 +3176,19 @@ dependencies = [
  "chrono",
  "dirs 5.0.1",
  "env_logger",
+ "hex",
  "log",
  "parking_lot",
  "regex",
  "rfd",
  "serde",
  "serde_json",
+ "sha2",
  "spellbook",
  "tauri",
  "tauri-build",
  "thiserror 2.0.21",
+ "trash",
  "uuid",
  "zip",
 ]
@@ -4194,6 +4197,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "db97caf9d906fbde555dd62fa95ddba9eecfd14cb388e4f491a66d74cd5fb79a"
 dependencies = [
  "once_cell",
+]
+
+[[package]]
+name = "trash"
+version = "5.2.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "be89b3fe156965d29ac4f8522f3a640c655affdd9f21cb4f36857f0c92c00317"
+dependencies = [
+ "chrono",
+ "libc",
+ "log",
+ "objc2",
+ "objc2-foundation",
+ "once_cell",
+ "percent-encoding",
+ "scopeguard",
+ "urlencoding",
+ "windows",
 ]
 
 [[package]]

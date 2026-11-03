@@ -58,6 +58,8 @@ interface Props {
     suspended?: boolean;
     /** Bumped when document text changed outside the editors. */
     reloadToken?: number;
+    /** The project is open read-only (another computer has it open). */
+    readOnly?: boolean;
     /** Extra controls for the bar under the editor (typewriter toggle…). */
     toolbarExtra?: React.ReactNode;
 }
@@ -74,6 +76,7 @@ export function SplitEditor({
     onPaneFocused,
     suspended = false,
     reloadToken = 0,
+    readOnly = false,
     toolbarExtra,
 }: Props) {
     const [split, setSplit] = useState<Split>(() => loadSplit());
@@ -347,6 +350,7 @@ export function SplitEditor({
                         onFormatChange={handleFormatChange}
                         onDisplayedIds={handleDisplayed}
                         reloadToken={reloadToken}
+                        editable={!readOnly}
                     />
                 </div>
                 )}
@@ -382,6 +386,7 @@ export function SplitEditor({
                                 onPaneFocused={handlePaneFocused}
                                 onFormatChange={handleFormatChange}
                                 reloadToken={reloadToken}
+                                editable={!readOnly}
                             />
                         </div>
                     </>

@@ -3,8 +3,9 @@
 /// Layout: left category sidebar, centre template grid, right preview pane,
 /// bottom action bar (Open Recent, Open Existing File, Cancel, Open).
 
-import { useEffect, useMemo, useState } from "react";
-import { api, type CategoryDto, type TemplatePreview } from "../services/api";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { api, type CategoryDto, type OpenProjectResult, type TemplatePreview } from "../services/api";
+import { usePreferences } from "../services/preferences";
 import { categoryIcon } from "../templates/categoryIcons";
 import {
     IconBook,
@@ -16,6 +17,7 @@ import {
 } from "../components/Icons";
 import { CreateProjectDialog } from "./CreateProjectDialog";
 import { RecentProjectsDialog } from "./RecentProjectsDialog";
+import { SyncTip, useGuardedOpen } from "./SyncDialogs";
 import "../styles/templates.css";
 import { t, tn } from "../i18n";
 
@@ -34,6 +36,20 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
     const [status, setStatus] = useState<Status>({ kind: "idle" });
     const [overlay, setOverlay] = useState<null | "recent" | "create">(null);
     const [defaultDir, setDefaultDir] = useState("");
+    const { prefs, save: savePrefs } = usePreferences();
+
+    const opened = useCallback(
+        (result: OpenProjectResult) => {
+            setStatus({ kind: "success", message: t("Opened {name}", { name: result.manifest.name }) });
+            onProjectOpened();
+        },
+        [onProjectOpened],
+    );
+    const failed = useCallback((message: string) => setStatus({ kind: "error", message }), []);
+    // Asks first when another computer has the project open or is still
+    // syncing a newer version.
+    const cancelled = useCallback(() => setStatus({ kind: "idle" }), []);
+    const guarded = useGuardedOpen(opened, failed, cancelled);
 
     // Load categories on mount.
     useEffect(() => {
@@ -77,13 +93,9 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
     const handleOpenExisting = async () => {
         setStatus({ kind: "busy", message: t("Opening file dialog…") });
         try {
-            const result = await api.openExistingFileDialog();
-            if (result) {
-                setStatus({ kind: "success", message: t("Opened {name}", { name: result.manifest.name }) });
-                onProjectOpened();
-            } else {
-                setStatus({ kind: "idle" });
-            }
+            const path = await api.pickProjectFile();
+            setStatus(path ? { kind: "busy", message: t("Opening project…") } : { kind: "idle" });
+            if (path) await guarded.request(path);
         } catch (e) {
             setStatus({ kind: "error", message: t("Failed to open project: {error}", { error: String(e) }) });
         }
@@ -92,12 +104,18 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
     const handleOpenRecentPath = async (path: string) => {
         setStatus({ kind: "busy", message: t("Opening project…") });
         setOverlay(null);
+        await guarded.request(path);
+    };
+
+    /** First-run tip: make a cloud folder the place for new projects. */
+    const chooseProjectsFolder = async () => {
         try {
-            const result = await api.openProjectAtPath(path);
-            setStatus({ kind: "success", message: t("Opened {name}", { name: result.manifest.name }) });
-            onProjectOpened();
+            const dir = await api.pickDirectory(t("Default folder for new projects"));
+            if (!dir || !prefs) return;
+            const stored = await savePrefs({ ...prefs, default_project_dir: dir });
+            setDefaultDir(stored.default_project_dir || dir);
         } catch (e) {
-            setStatus({ kind: "error", message: t("Failed to open project: {error}", { error: String(e) }) });
+            setStatus({ kind: "error", message: String(e) });
         }
     };
 
@@ -154,6 +172,7 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                             <div className="templates-center-desc">{t(activeCat.description)}</div>
                         )}
                     </div>
+                    <SyncTip onChooseFolder={chooseProjectsFolder} />
                     <div className="templates-grid-scroll">
                         {templates.length === 0 ? (
                             <div
@@ -296,6 +315,7 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                     onClose={() => setOverlay(null)}
                 />
             )}
+            {guarded.dialog}
             {overlay === "create" && selectedTemplate && (
                 <CreateProjectDialog
                     template={selectedTemplate}

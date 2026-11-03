@@ -40,6 +40,15 @@ pub enum AppError {
     #[error("path not allowed: {0}")]
     PathNotAllowed(String),
 
+    #[error("the project is open read-only")]
+    ReadOnly,
+
+    /// The file on disk is no longer the version this computer last read or
+    /// wrote (another computer saved it through a synced folder). The
+    /// frontend recognises this exact text.
+    #[error("the project file was changed on another computer")]
+    ExternalChange,
+
     #[error("{0}")]
     Other(String),
 }

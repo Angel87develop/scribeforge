@@ -12,10 +12,13 @@ import type { Preferences } from "../services/api";
 import { applyEditorFormat, usePreferences } from "../services/preferences";
 import { IconSettings } from "../components/Icons";
 import { FormatPreferences } from "./FormatPreferences";
+import { SyncHelpDialog } from "./SyncDialogs";
+import { api } from "../services/api";
+import "../styles/sync.css";
 import "../styles/dialogs.css";
 import { LANGUAGES, t } from "../i18n";
 
-type Tab = "general" | "editor" | "format" | "saving" | "composition" | "languages";
+type Tab = "general" | "editor" | "format" | "saving" | "sync" | "composition" | "languages";
 
 /** Labels are English; translated when drawn. */
 const TABS: { id: Tab; label: string }[] = [
@@ -23,6 +26,7 @@ const TABS: { id: Tab; label: string }[] = [
     { id: "editor", label: "Editor" },
     { id: "format", label: "Format" },
     { id: "saving", label: "Saving" },
+    { id: "sync", label: "Sync" },
     { id: "composition", label: "Composition" },
     { id: "languages", label: "Languages" },
 ];
@@ -38,6 +42,7 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
     const [draft, setDraft] = useState<Preferences | null>(prefs);
     const [tab, setTab] = useState<Tab>("general");
     const [saving, setSaving] = useState(false);
+    const [syncHelp, setSyncHelp] = useState(false);
 
     useEffect(() => {
         if (!draft && prefs) setDraft(prefs);
@@ -55,13 +60,14 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
 
     useEffect(() => {
         const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") cancel();
+            // The setup help closes first.
+            if (e.key === "Escape" && !syncHelp) cancel();
         };
         window.addEventListener("keydown", onKey);
         return () => window.removeEventListener("keydown", onKey);
-    }, [cancel]);
+    }, [cancel, syncHelp]);
 
-    function patch<K extends keyof Preferences>(section: K, values: Partial<Preferences[K]>) {
+    function patch<K extends Exclude<keyof Preferences, "default_project_dir">>(section: K, values: Partial<Preferences[K]>) {
         setDraft((d) => (d ? { ...d, [section]: { ...d[section], ...values } } : d));
     }
 
@@ -219,7 +225,7 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
                                     </Field>
                                     <Field
                                         label={t("Backups to keep")}
-                                        hint={t("Each save copies the project into <name>.backups next to it; older copies beyond this number are removed.")}
+                                        hint={t("Each save copies the project into a backup folder on this computer, outside any synced folder; older copies beyond this number are removed. See File → Backups.")}
                                     >
                                         <input
                                             type="number"
@@ -231,6 +237,81 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
                                             }
                                         />
                                     </Field>
+                                </>
+                            )}
+
+                            {tab === "sync" && (
+                                <>
+                                    <p className="prefs-note">
+                                        {t("ScribeForge does not connect to your cloud account. It only saves files in the folder you choose; your OneDrive, Google Drive or Dropbox app uploads them.")}
+                                    </p>
+                                    <Field
+                                        label={t("Name of this computer")}
+                                        hint={t("Shown on your other computers, as in “open on Laptop”. Leave it empty to show “another computer”.")}
+                                    >
+                                        <input
+                                            type="text"
+                                            maxLength={60}
+                                            placeholder={t("For example: Laptop")}
+                                            value={draft.sync.device_name}
+                                            onChange={(e) => patch("sync", { device_name: e.target.value })}
+                                        />
+                                    </Field>
+                                    <Field
+                                        label={t("Default folder for new projects")}
+                                        hint={t("Choose a folder inside OneDrive, Google Drive or Dropbox to have your projects on every computer.")}
+                                    >
+                                        <span className="prefs-folder-row">
+                                            <input
+                                                type="text"
+                                                readOnly
+                                                value={draft.default_project_dir || t("Documents › ScribeForge (default)")}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={async (e) => {
+                                                    e.preventDefault();
+                                                    const dir = await api.pickDirectory(t("Default folder for new projects"));
+                                                    if (dir) setDraft((d) => (d ? { ...d, default_project_dir: dir } : d));
+                                                }}
+                                            >
+                                                {t("Change…")}
+                                            </button>
+                                            {draft.default_project_dir && (
+                                                <button
+                                                    type="button"
+                                                    onClick={(e) => {
+                                                        e.preventDefault();
+                                                        setDraft((d) => (d ? { ...d, default_project_dir: "" } : d));
+                                                    }}
+                                                >
+                                                    {t("Use Documents")}
+                                                </button>
+                                            )}
+                                        </span>
+                                    </Field>
+                                    <label className="prefs-check">
+                                        <input
+                                            type="checkbox"
+                                            checked={draft.sync.warn_open_elsewhere}
+                                            onChange={(e) => patch("sync", { warn_open_elsewhere: e.target.checked })}
+                                        />
+                                        {t("Warn me when the project is open on another computer")}
+                                    </label>
+                                    <label className="prefs-check">
+                                        <input
+                                            type="checkbox"
+                                            checked={draft.sync.auto_reload}
+                                            onChange={(e) => patch("sync", { auto_reload: e.target.checked })}
+                                        />
+                                        {t("Reload automatically when changes arrive from another computer")}
+                                    </label>
+                                    <p>
+                                        <button type="button" onClick={() => setSyncHelp(true)}>
+                                            {t("How do I set it up?")}
+                                        </button>
+                                    </p>
+                                    {syncHelp && <SyncHelpDialog onClose={() => setSyncHelp(false)} />}
                                 </>
                             )}
 

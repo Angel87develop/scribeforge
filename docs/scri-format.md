@@ -186,9 +186,19 @@ compilation, and is the only persisted representation of document text.
 4. Replace the target:
    - direct rename where the OS allows it;
    - otherwise `rename(target, *.old) → rename(tmp, target) → remove(.old)`.
-5. Copy the new file into `<name>.backups/<name>-<timestamp>.scri` and prune
-   to the newest `backup_count` copies.
+5. Copy the new file into this computer's backup folder for the project,
+   `<local data dir>/com.scribeforge.app/backups/<project_id>/<name>-<timestamp>.scri`
+   (`%LOCALAPPDATA%` on Windows), and prune to the newest `backup_count`
+   copies. Backups stay outside the project's folder so a synced folder does
+   not carry several full copies of every project. (Earlier builds wrote
+   them to `<name>.backups/` next to the file; those folders are left as
+   they are.)
 6. On any failure before step 4 completes, the original file is untouched.
+
+Before step 2 the app checks that the file on disk is still the version it
+last read or wrote (size and modification time, then SHA-256). If another
+computer saved it meanwhile, the save is refused and the two versions are
+combined first (see §9a).
 
 ## 8. Open procedure
 
@@ -207,6 +217,47 @@ compilation, and is the only persisted representation of document text.
   the user explicitly chooses external references, recorded as relative paths).
 - Test `portability_move_file_to_new_location` copies a `.scri` to a new path
   and reopens it, asserting identical ids and name.
+
+## 9a. Several computers (synced folders)
+
+A project can live in a folder that a cloud client (OneDrive, Google Drive
+for desktop, Dropbox, iCloud) keeps in sync between computers. ScribeForge
+never talks to the cloud service; next to the project it keeps one small
+sidecar file, which is **not** part of the container:
+
+```
+.MyProject.scri.sync
+```
+
+```jsonc
+{
+  "device_id": "uuid-v4",            // random, generated once per installation
+  "device_name": "Laptop",           // chosen by the user; may be empty
+  "state": "open",                    // "open" | "closed"
+  "heartbeat": "2026-11-02T10:31:00Z",// refreshed every 60 s while open
+  "saved_hash": "sha256-hex"          // last version this computer saved
+}
+```
+
+- **Open elsewhere:** `state: "open"` from another device with a heartbeat
+  younger than 180 s → the user may open read-only or anyway.
+- **Still syncing:** `state: "closed"` (or a stale `open`) whose
+  `saved_hash` differs from the file on disk → the newest version has not
+  arrived yet; the user may wait or open what is there.
+- **Changed while open:** polled every 10 s. With nothing unsaved the app
+  reloads; otherwise the two versions are combined document by document,
+  using the version last read or written as the common origin: a document
+  changed on one side only is taken from that side, one changed on both is
+  the user's choice (this computer's, the other's, or keep this one and store
+  the other as a snapshot).
+- **Conflict copies:** `.scri` files next to the project whose name starts
+  with the project's file name and whose `project_id` matches are offered for
+  combining (without a common origin nothing is deleted). When the app exits
+  with unsaved changes and the file was changed elsewhere, the changes are
+  written to such a copy, `<name> (<device> <date>).scri`.
+
+The sidecar holds no account data and no paths. Missing or unreadable
+sidecars are ignored.
 
 ## 10. Changelog
 

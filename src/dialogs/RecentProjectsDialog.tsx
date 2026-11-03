@@ -51,6 +51,20 @@ export function RecentProjectsDialog({ onOpen, onClose }: Props) {
             .catch((err) => setError(String(err)));
     };
 
+    /** A project that moved (or lives elsewhere on this computer): pick the
+     *  file, drop the stale entry and open it. */
+    const locate = async (oldPath: string, e: React.MouseEvent) => {
+        e.stopPropagation();
+        try {
+            const path = await api.pickProjectFile();
+            if (!path) return;
+            await api.removeRecentProject(oldPath);
+            onOpen(path);
+        } catch (err) {
+            setError(String(err));
+        }
+    };
+
     const openSelected = () => {
         if (selected) onOpen(selected);
     };
@@ -88,6 +102,16 @@ export function RecentProjectsDialog({ onOpen, onClose }: Props) {
                                     <span className={`recent-item-status ${r.available ? "ok" : "missing"}`}>
                                         {r.available ? t("Available") : t("Missing")}
                                     </span>
+                                    {!r.available && (
+                                        <button
+                                            className="subtle"
+                                            title={t("Find the file on this computer")}
+                                            onClick={(e) => locate(r.path, e)}
+                                            style={{ padding: "2px 8px", minHeight: 24 }}
+                                        >
+                                            {t("Locate…")}
+                                        </button>
+                                    )}
                                     <button
                                         className="subtle recent-item-remove"
                                         title={t("Remove from list")}

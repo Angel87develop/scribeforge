@@ -29,6 +29,9 @@ parking_lot = "0.12"
 base64 = "0.22"
 regex = "1"
 spellbook = "0.4"
+sha2 = "0.10"
+hex = "0.4"
+trash = "5"
 
 [features]
 # This feature is used for production builds where `devUrl` is not used.

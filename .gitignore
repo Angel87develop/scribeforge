@@ -22,3 +22,9 @@ desktop.ini
 # Temp
 *.scri.tmp
 *.scri.bak
+
+# ScribeForge projects and their sync files: keep manuscripts out of the repo
+*.scri
+*.scri.sync
+*.scri.old
+*.backups/

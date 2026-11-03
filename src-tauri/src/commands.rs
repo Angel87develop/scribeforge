@@ -17,8 +17,9 @@ use crate::project::document::{
 };
 use crate::project::model::{AssetData, TreeError};
 use crate::settings::{
-    AppearanceSettings, CompositionSettings, EditorSettings, GeneralSettings, SavingSettings,
+    AppearanceSettings, CompositionSettings, EditorSettings, GeneralSettings, SavingSettings, SyncSettings,
 };
+use crate::sync::{self, merge};
 use crate::state::AppState;
 use crate::storage::{ensure_scri_extension, read_project_from_path, write_project_to_path};
 use crate::templates::{
@@ -99,52 +100,65 @@ pub fn remove_recent_project(state: State<'_, AppState>, path: String) -> AppRes
 // Open existing file
 // ---------------------------------------------------------------------------
 
+/// Let the user pick a `.scri` file. The frontend checks it with
+/// `check_project_open` before opening it.
 #[tauri::command]
-pub fn open_existing_file_dialog(
-    state: State<'_, AppState>,
-) -> AppResult<Option<OpenProjectResult>> {
+pub fn pick_project_file(state: State<'_, AppState>) -> AppResult<Option<String>> {
     let file = rfd::FileDialog::new()
         .add_filter(localized(&state, "ScribeForge Project", "Proyecto de ScribeForge"), &["scri"])
         .set_title(localized(&state, "Open ScribeForge Project", "Abrir proyecto de ScribeForge"))
         .pick_file();
-
-    let Some(path) = file else {
-        return Ok(None);
-    };
-
-    let path = ensure_scri_extension(&path);
-    let result = open_project_internal(&state, &path)?;
-    Ok(Some(result))
+    Ok(file.map(|p| ensure_scri_extension(&p).to_string_lossy().to_string()))
 }
 
 #[tauri::command]
-pub fn open_project_at_path(state: State<'_, AppState>, path: String) -> AppResult<OpenProjectResult> {
+pub fn open_project_at_path(
+    state: State<'_, AppState>,
+    path: String,
+    read_only: Option<bool>,
+) -> AppResult<OpenProjectResult> {
     let path = ensure_scri_extension(&PathBuf::from(path));
-    open_project_internal(&state, &path)
+    open_project_internal(&state, &path, read_only.unwrap_or(false))
 }
 
-fn open_project_internal(state: &State<'_, AppState>, path: &Path) -> AppResult<OpenProjectResult> {
+/// Read `path` and the state of the file it was read from, re-reading once
+/// if the file changed meanwhile (a cloud client writing it).
+fn read_with_disk_state(path: &Path) -> AppResult<(crate::project::model::Project, sync::DiskState)> {
+    let disk = sync::disk_state(path)?;
+    let project = read_project_from_path(path)?;
+    match sync::changed_on_disk(path, &disk)? {
+        None => Ok((project, disk)),
+        Some(_) => {
+            let disk = sync::disk_state(path)?;
+            Ok((read_project_from_path(path)?, disk))
+        }
+    }
+}
+
+fn open_project_internal(state: &State<'_, AppState>, path: &Path, read_only: bool) -> AppResult<OpenProjectResult> {
     if !path.exists() {
         return Err(AppError::InvalidProject(format!(
             "file does not exist: {}",
             path.display()
         )));
     }
-    let project = read_project_from_path(path)?;
+    let (project, disk) = read_with_disk_state(path)?;
 
     let name = project.manifest.name.clone();
-    let project_id = project.manifest.project_id.to_string();
+    let id = project.manifest.project_id;
+    let project_id = id.to_string();
     let manifest = serde_json::to_value(&project.manifest)?;
+    let hash = disk.hash.clone();
 
-    {
-        let mut open = state.open_project.write();
-        open.project = Some(project);
-        open.path = Some(path.to_path_buf());
-        open.dirty = false;
+    // The project open until now is no longer open on this computer.
+    state.release_marker();
+    state.open_project.write().set_loaded(project, path.to_path_buf(), Some(disk), read_only);
+    if !read_only {
+        state.write_marker(path, sync::MarkerState::Open, &hash);
     }
     {
         let mut settings = state.settings.write();
-        settings.record_recent(path.to_path_buf(), name);
+        settings.record_recent(path.to_path_buf(), name, Some(id));
     }
     state.settings.read().save()?;
 
@@ -220,7 +234,7 @@ pub fn create_project(
     }
 
     // Re-open to validate round-trip.
-    open_project_internal(&state, &target)
+    open_project_internal(&state, &target, false)
 }
 
 fn validate_project_name(name: &str) -> AppResult<()> {
@@ -289,7 +303,11 @@ pub fn pick_save_file(
 
 /// Default location for new projects: `<Documents>/ScribeForge`.
 #[tauri::command]
-pub fn get_default_project_dir() -> AppResult<String> {
+pub fn get_default_project_dir(state: State<'_, AppState>) -> AppResult<String> {
+    let chosen = state.settings.read().default_project_dir.clone();
+    if !chosen.is_empty() {
+        return Ok(chosen);
+    }
     let base = dirs::document_dir()
         .or_else(dirs::home_dir)
         .ok_or_else(|| AppError::Other("no documents directory available".into()))?;
@@ -688,19 +706,22 @@ pub fn save_project_as(state: State<'_, AppState>, path: String) -> AppResult<Op
         let project = guard.project.as_ref().ok_or(AppError::NoProjectOpen)?;
         (project.clone(), ())
     };
+    // A copy saved on purpose is a project of its own: its own entry in
+    // Recent, its own backups, and never mistaken for a sync conflict copy.
+    project.manifest.project_id = Uuid::new_v4();
     project.manifest.touch();
     write_project_to_path(&project, &path)?;
 
     // Open the newly saved copy.
-    open_project_internal(&state, &path)
+    open_project_internal(&state, &path, false)
 }
 
 #[tauri::command]
 pub fn close_project(state: State<'_, AppState>) -> AppResult<()> {
-    let mut open = state.open_project.write();
-    open.project = None;
-    open.path = None;
-    open.dirty = false;
+    // Saves pending changes; fails with `ExternalChange` (and keeps the
+    // project open) when another computer saved it meanwhile.
+    state.release_project()?;
+    *state.open_project.write() = Default::default();
     Ok(())
 }
 
@@ -1061,10 +1082,17 @@ pub struct PreferencesDto {
     pub composition: CompositionSettings,
     #[serde(default)]
     pub format: FormatSettings,
+    #[serde(default)]
+    pub sync: SyncSettings,
+    /// Where new projects go; empty means Documents/ScribeForge.
+    #[serde(default)]
+    pub default_project_dir: String,
 }
 
 fn preferences_of(s: &crate::settings::Settings) -> PreferencesDto {
     PreferencesDto {
+        sync: s.sync.clone(),
+        default_project_dir: s.default_project_dir.clone(),
         general: s.general.clone(),
         editor: s.editor.clone(),
         appearance: s.appearance.clone(),
@@ -1091,6 +1119,11 @@ pub fn update_preferences(state: State<'_, AppState>, prefs: PreferencesDto) -> 
         s.saving = prefs.saving;
         s.composition = prefs.composition;
         s.format = prefs.format;
+        // The device id is this computer's, never the preferences'.
+        let device_id = s.sync.device_id;
+        s.sync = prefs.sync;
+        s.sync.device_id = device_id;
+        s.default_project_dir = prefs.default_project_dir;
         s.sanitize();
         preferences_of(&s)
     };
@@ -1099,8 +1132,9 @@ pub fn update_preferences(state: State<'_, AppState>, prefs: PreferencesDto) -> 
 }
 
 #[tauri::command]
-pub fn quit_app(app: AppHandle) {
+pub fn quit_app(app: AppHandle, state: State<'_, AppState>) {
     log::info!("Quit requested");
+    state.release_on_exit();
     app.exit(0);
 }
 
@@ -1628,4 +1662,299 @@ pub fn reset_card_positions(state: State<'_, AppState>, folder: String) -> AppRe
         p.touch();
         Ok(())
     })
+}
+
+// ---------------------------------------------------------------------------
+// Working from several computers (synced folders)
+// ---------------------------------------------------------------------------
+
+/// What to tell the user before opening `path`: whether another computer
+/// has it open or has a version still on its way.
+#[tauri::command]
+pub fn check_project_open(state: State<'_, AppState>, path: String) -> AppResult<sync::OpenCheck> {
+    let path = ensure_scri_extension(&PathBuf::from(path));
+    if !path.exists() {
+        return Err(AppError::InvalidProject(format!("file does not exist: {}", path.display())));
+    }
+    let (device_id, warn) = {
+        let s = state.settings.read();
+        (s.sync.device_id, s.sync.warn_open_elsewhere)
+    };
+    sync::check_open(&path, device_id, warn)
+}
+
+/// Conflict copies of the open project, offered for combining once it is
+/// open.
+#[tauri::command]
+pub fn list_conflict_copies(state: State<'_, AppState>) -> AppResult<Vec<sync::ConflictCopy>> {
+    let guard = state.open_project.read();
+    let path = guard.path.as_ref().ok_or(AppError::NoProjectOpen)?;
+    let id = guard.project.as_ref().ok_or(AppError::NoProjectOpen)?.manifest.project_id;
+    Ok(sync::find_conflict_copies(path, id))
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct SyncStatusDto {
+    /// "onedrive", "google_drive", "dropbox", "icloud", or null for a folder
+    /// that only exists on this computer.
+    pub provider: Option<&'static str>,
+    pub read_only: bool,
+}
+
+#[tauri::command]
+pub fn get_sync_status(state: State<'_, AppState>) -> AppResult<SyncStatusDto> {
+    let guard = state.open_project.read();
+    let path = guard.path.as_ref().ok_or(AppError::NoProjectOpen)?;
+    Ok(SyncStatusDto { provider: sync::cloud_provider(path), read_only: guard.read_only })
+}
+
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct SyncPollDto {
+    /// Another computer saved a newer version of the file.
+    pub external_change: bool,
+    pub dirty: bool,
+    /// Name of another computer that has the project open right now ("" if
+    /// it has no name), or null.
+    pub open_elsewhere: Option<String>,
+    /// Name of the computer that saved the file last ("" if unknown).
+    pub saved_by: String,
+}
+
+/// Called every few seconds while a project is open: tells other computers
+/// this one still has it open, and reports versions saved elsewhere.
+#[tauri::command]
+pub fn sync_poll(state: State<'_, AppState>) -> AppResult<SyncPollDto> {
+    let (path, known, read_only, last, dirty) = {
+        let guard = state.open_project.read();
+        let Some(path) = guard.path.clone() else {
+            return Ok(SyncPollDto::default());
+        };
+        (path, guard.disk.clone(), guard.read_only, guard.last_heartbeat, guard.dirty)
+    };
+    let own = state.settings.read().sync.device_id;
+    let marker = sync::read_marker(&path);
+    let other = marker.as_ref().filter(|m| m.device_id != own);
+    let open_elsewhere = other
+        .filter(|m| m.state == sync::MarkerState::Open && m.is_fresh())
+        .map(|m| m.device_name.clone());
+    let saved_by = other.map(|m| m.device_name.clone()).unwrap_or_default();
+    let external_change = match &known {
+        Some(k) => sync::changed_on_disk(&path, k)?.is_some(),
+        None => false,
+    };
+
+    let due = last.map_or(true, |t| chrono::Utc::now() - t >= chrono::Duration::seconds(sync::HEARTBEAT_SECS));
+    if !read_only && !external_change && open_elsewhere.is_none() && due {
+        let hash = known.map(|k| k.hash).unwrap_or_default();
+        state.write_marker(&path, sync::MarkerState::Open, &hash);
+    }
+    Ok(SyncPollDto { external_change, dirty, open_elsewhere, saved_by })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ReloadDto {
+    /// Titles of the documents that changed.
+    pub changed: Vec<String>,
+}
+
+/// Take the version another computer saved. Only allowed with nothing
+/// unsaved here; otherwise the conflict dialog combines both.
+#[tauri::command]
+pub fn reload_from_disk(state: State<'_, AppState>) -> AppResult<ReloadDto> {
+    let (path, old, read_only) = {
+        let guard = state.open_project.read();
+        if guard.dirty {
+            return Err(AppError::Other("there are unsaved changes".into()));
+        }
+        let path = guard.path.clone().ok_or(AppError::NoProjectOpen)?;
+        let old = guard.project.clone().ok_or(AppError::NoProjectOpen)?;
+        (path, old, guard.read_only)
+    };
+    let (mut project, disk) = read_with_disk_state(&path)?;
+    if project.manifest.project_id != old.manifest.project_id {
+        return Err(AppError::InvalidProject("the file now holds a different project".into()));
+    }
+    let changed = merge::plan(&old, &project, None).into_iter().map(|i| i.title).collect();
+    project.session = old.session.clone();
+    let mut guard = state.open_project.write();
+    let last = guard.last_heartbeat;
+    guard.set_loaded(project, path, Some(disk), read_only);
+    guard.last_heartbeat = last;
+    Ok(ReloadDto { changed })
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ConflictDto {
+    /// Name of the other computer ("" if unknown).
+    pub device_name: String,
+    /// File name of the conflict copy being combined, or null for the
+    /// project file itself.
+    pub copy_name: Option<String>,
+    pub items: Vec<merge::MergeItem>,
+}
+
+/// Compare this computer's project with the version on disk, or with a
+/// conflict copy (`copy_path`), document by document.
+#[tauri::command]
+pub fn get_sync_conflict(state: State<'_, AppState>, copy_path: Option<String>) -> AppResult<ConflictDto> {
+    let (path, local_id) = {
+        let guard = state.open_project.read();
+        let path = guard.path.clone().ok_or(AppError::NoProjectOpen)?;
+        let id = guard.project.as_ref().ok_or(AppError::NoProjectOpen)?.manifest.project_id;
+        (path, id)
+    };
+    let copy = copy_path.map(|c| checked_copy_path(&path, local_id, &c)).transpose()?;
+    let (remote, disk) = match &copy {
+        Some(c) => (read_project_from_path(c)?, None),
+        None => {
+            let (p, d) = read_with_disk_state(&path)?;
+            (p, Some(d))
+        }
+    };
+    if remote.manifest.project_id != local_id {
+        return Err(AppError::InvalidProject("the file now holds a different project".into()));
+    }
+    let own = state.settings.read().sync.device_id;
+    let device_name = match &copy {
+        Some(_) => String::new(),
+        None => sync::read_marker(&path)
+            .filter(|m| m.device_id != own)
+            .map(|m| m.device_name)
+            .unwrap_or_default(),
+    };
+    let copy_name = copy.as_ref().and_then(|c| c.file_name()).map(|n| n.to_string_lossy().to_string());
+
+    let mut guard = state.open_project.write();
+    let local = guard.project.as_ref().ok_or(AppError::NoProjectOpen)?;
+    let base = copy.is_none().then_some(&guard.base);
+    let items = merge::plan(local, &remote, base);
+    guard.pending_remote = Some(crate::state::PendingRemote { project: remote, copy_path: copy, disk });
+    Ok(ConflictDto { device_name, copy_name, items })
+}
+
+/// A conflict copy must be a `.scri` next to the open project, holding the
+/// same project.
+fn checked_copy_path(project: &Path, project_id: Uuid, copy: &str) -> AppResult<PathBuf> {
+    let copy = PathBuf::from(copy);
+    let beside = copy.parent().is_some_and(|d| Some(d) == project.parent());
+    if !beside || copy == project || copy.extension().and_then(|e| e.to_str()) != Some("scri") {
+        return Err(AppError::PathNotAllowed(copy.display().to_string()));
+    }
+    if crate::storage::archive::read_project_id(&copy)? != project_id {
+        return Err(AppError::InvalidProject("the copy holds a different project".into()));
+    }
+    Ok(copy)
+}
+
+/// The other computer's text of a document (as the original) against this
+/// computer's.
+#[tauri::command]
+pub fn sync_conflict_diff(state: State<'_, AppState>, id: String) -> AppResult<crate::writing::diff::DiffResult> {
+    let id = parse_uuid(&id)?;
+    let guard = state.open_project.read();
+    let local = guard.project.as_ref().ok_or(AppError::NoProjectOpen)?;
+    let pending = guard.pending_remote.as_ref().ok_or(AppError::Other("no conflict to compare".into()))?;
+    let theirs = pending.project.get(id).ok_or_else(|| AppError::DocumentNotFound(id.to_string()))?;
+    let mine = local.get(id).ok_or_else(|| AppError::DocumentNotFound(id.to_string()))?;
+    Ok(crate::writing::diff::diff_docs(&theirs.content, &mine.content))
+}
+
+/// Combine both versions with the user's choices (document id → "local",
+/// "remote" or "both") and save the result.
+#[tauri::command]
+pub fn resolve_sync_conflict(
+    state: State<'_, AppState>,
+    choices: std::collections::HashMap<String, merge::Side>,
+    snapshot_label: String,
+) -> AppResult<()> {
+    let choices = choices
+        .into_iter()
+        .map(|(k, v)| Ok((parse_uuid(&k)?, v)))
+        .collect::<AppResult<std::collections::HashMap<Uuid, merge::Side>>>()?;
+    {
+        let mut guard = state.open_project.write();
+        let pending = guard.pending_remote.take().ok_or(AppError::Other("no conflict to resolve".into()))?;
+        let local = guard.project.as_ref().ok_or(AppError::NoProjectOpen)?;
+        let from_disk = pending.copy_path.is_none();
+        let base = from_disk.then_some(&guard.base);
+        let mut merged = merge::apply(local, &pending.project, base, &choices, snapshot_label.trim());
+        merged.session = local.session.clone();
+        guard.project = Some(merged);
+        guard.dirty = true;
+        if from_disk {
+            // The combined project already contains what is on disk, so it
+            // may now replace it.
+            guard.base = merge::fingerprints(&pending.project);
+            guard.disk = pending.disk;
+        }
+        if guard.read_only {
+            return Ok(());
+        }
+    }
+    state.save_now()
+}
+
+/// Forget a conflict read with `get_sync_conflict` without combining.
+#[tauri::command]
+pub fn cancel_sync_conflict(state: State<'_, AppState>) {
+    state.open_project.write().pending_remote = None;
+}
+
+/// Move a combined conflict copy to the system recycle bin.
+#[tauri::command]
+pub fn trash_conflict_copy(state: State<'_, AppState>, path: String) -> AppResult<()> {
+    let (project, id) = {
+        let guard = state.open_project.read();
+        let path = guard.path.clone().ok_or(AppError::NoProjectOpen)?;
+        let id = guard.project.as_ref().ok_or(AppError::NoProjectOpen)?.manifest.project_id;
+        (path, id)
+    };
+    let copy = checked_copy_path(&project, id, &path)?;
+    trash::delete(&copy).map_err(|e| AppError::Other(format!("could not move the copy to the recycle bin: {e}")))
+}
+
+/// Edit a project that was opened read-only because another computer had
+/// it open.
+#[tauri::command]
+pub fn sync_take_over(state: State<'_, AppState>) -> AppResult<()> {
+    let (path, hash) = {
+        let mut guard = state.open_project.write();
+        let path = guard.path.clone().ok_or(AppError::NoProjectOpen)?;
+        guard.read_only = false;
+        (path, guard.disk.as_ref().map(|d| d.hash.clone()).unwrap_or_default())
+    };
+    state.write_marker(&path, sync::MarkerState::Open, &hash);
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// Backups on this computer
+// ---------------------------------------------------------------------------
+
+#[tauri::command]
+pub fn list_local_backups(state: State<'_, AppState>) -> AppResult<Vec<sync::BackupDto>> {
+    let id = state.with_project(|p| Ok(p.manifest.project_id))?;
+    sync::list_backups(id)
+}
+
+/// Replace the open project's content with a backup and save it. The
+/// version being replaced has its own backup from when it was saved.
+#[tauri::command]
+pub fn restore_local_backup(state: State<'_, AppState>, path: String) -> AppResult<()> {
+    let id = state.with_project(|p| Ok(p.manifest.project_id))?;
+    let dir = sync::local_backups_dir(id)?;
+    let backup = PathBuf::from(path);
+    if backup.parent() != Some(dir.as_path()) || backup.extension().and_then(|e| e.to_str()) != Some("scri") {
+        return Err(AppError::PathNotAllowed(backup.display().to_string()));
+    }
+    let mut restored = read_project_from_path(&backup)?;
+    if restored.manifest.project_id != id {
+        return Err(AppError::InvalidProject("the backup holds a different project".into()));
+    }
+    state.mutate_project(|p| {
+        restored.session = p.session.clone();
+        *p = restored;
+        Ok(())
+    })?;
+    state.save_now()
 }

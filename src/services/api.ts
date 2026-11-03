@@ -465,6 +465,15 @@ export interface Preferences {
         page_opacity: number;
     };
     format: FormatSettings;
+    sync: {
+        /** This computer's random id; never changed from the interface. */
+        device_id: string;
+        device_name: string;
+        warn_open_elsewhere: boolean;
+        auto_reload: boolean;
+    };
+    /** Where new projects go; empty means Documents/ScribeForge. */
+    default_project_dir: string;
 }
 
 /** Mirrors `format_profiles::FormatProfile` in Rust. */
@@ -508,6 +517,70 @@ export interface BuiltinFormatProfile {
     profile: FormatProfile;
 }
 
+// ---------------------------------------------------------------------------
+// Working from several computers (mirrors `sync` and its commands in Rust)
+// ---------------------------------------------------------------------------
+
+/** Exact text of `AppError::ExternalChange`: another computer saved the
+ *  project since this one last read or wrote it. */
+export const EXTERNAL_CHANGE = "the project file was changed on another computer";
+
+export function isExternalChange(e: unknown): boolean {
+    return String(e) === EXTERNAL_CHANGE;
+}
+
+export interface ConflictCopy {
+    path: string;
+    file_name: string;
+    modified_at: string | null;
+}
+
+/** Device names are "" when the other computer has no name. */
+export type OpenCheck =
+    | { status: "ok" }
+    | { status: "open_elsewhere"; device_name: string; last_seen: string }
+    | { status: "syncing"; device_name: string; saved_at: string };
+
+export type CloudProvider = "onedrive" | "google_drive" | "dropbox" | "icloud";
+
+export interface SyncStatus {
+    provider: CloudProvider | null;
+    read_only: boolean;
+}
+
+export interface SyncPoll {
+    external_change: boolean;
+    dirty: boolean;
+    open_elsewhere: string | null;
+    saved_by: string;
+}
+
+export type MergeSide = "local" | "remote" | "both";
+
+export interface MergeItem {
+    id: string;
+    title: string;
+    change: "local_only" | "remote_only" | "both";
+    suggested: MergeSide;
+    local_deleted: boolean;
+    remote_deleted: boolean;
+    comparable: boolean;
+}
+
+export interface SyncConflict {
+    device_name: string;
+    /** File name of the conflict copy being combined, or null. */
+    copy_name: string | null;
+    items: MergeItem[];
+}
+
+export interface BackupDto {
+    path: string;
+    file_name: string;
+    created_at: string | null;
+    size: number;
+}
+
 export interface CreateProjectArgs {
     name: string;
     template_id: string;
@@ -525,10 +598,9 @@ export const api = {
         invoke("list_recent_projects"),
     removeRecentProject: (path: string): Promise<void> =>
         invoke("remove_recent_project", { path }),
-    openExistingFileDialog: (): Promise<OpenProjectResult | null> =>
-        invoke("open_existing_file_dialog"),
-    openProjectAtPath: (path: string): Promise<OpenProjectResult> =>
-        invoke("open_project_at_path", { path }),
+    pickProjectFile: (): Promise<string | null> => invoke("pick_project_file"),
+    openProjectAtPath: (path: string, readOnly = false): Promise<OpenProjectResult> =>
+        invoke("open_project_at_path", { path, readOnly }),
     createProject: (args: CreateProjectArgs): Promise<OpenProjectResult> =>
         invoke("create_project", { args }),
     getCurrentProject: (): Promise<CurrentProjectDto> =>
@@ -582,6 +654,8 @@ export const api = {
     isProjectDirty: (): Promise<boolean> => invoke("is_project_dirty"),
     pickSaveFile: (title?: string, fileName?: string): Promise<string | null> =>
         invoke("pick_save_file", { title, fileName }),
+    /** Saves pending changes first; rejects with EXTERNAL_CHANGE when another
+     *  computer saved the project meanwhile (the project stays open). */
     closeProject: (): Promise<void> => invoke("close_project"),
     quitApp: (): Promise<void> => invoke("quit_app"),
     listCompilePresets: (): Promise<CompilePreset[]> => invoke("list_compile_presets"),
@@ -599,6 +673,22 @@ export const api = {
     getDefaultProjectDir: (): Promise<string> => invoke("get_default_project_dir"),
     projectPathExists: (directory: string, name: string): Promise<boolean> =>
         invoke("project_path_exists", { directory, name }),
+
+    // Working from several computers
+    checkProjectOpen: (path: string): Promise<OpenCheck> => invoke("check_project_open", { path }),
+    listConflictCopies: (): Promise<ConflictCopy[]> => invoke("list_conflict_copies"),
+    getSyncStatus: (): Promise<SyncStatus> => invoke("get_sync_status"),
+    syncPoll: (): Promise<SyncPoll> => invoke("sync_poll"),
+    reloadFromDisk: (): Promise<{ changed: string[] }> => invoke("reload_from_disk"),
+    getSyncConflict: (copyPath?: string): Promise<SyncConflict> => invoke("get_sync_conflict", { copyPath }),
+    syncConflictDiff: (id: string): Promise<DiffResult> => invoke("sync_conflict_diff", { id }),
+    resolveSyncConflict: (choices: Record<string, MergeSide>, snapshotLabel: string): Promise<void> =>
+        invoke("resolve_sync_conflict", { choices, snapshotLabel }),
+    cancelSyncConflict: (): Promise<void> => invoke("cancel_sync_conflict"),
+    trashConflictCopy: (path: string): Promise<void> => invoke("trash_conflict_copy", { path }),
+    syncTakeOver: (): Promise<void> => invoke("sync_take_over"),
+    listLocalBackups: (): Promise<BackupDto[]> => invoke("list_local_backups"),
+    restoreLocalBackup: (path: string): Promise<void> => invoke("restore_local_backup", { path }),
 
     // Goals and statistics
     getWritingGoals: (): Promise<WritingGoalsDto> => invoke("get_writing_goals"),

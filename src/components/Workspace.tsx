@@ -20,6 +20,11 @@
 /// - Organisation: coloured labels and statuses (shared via context), wiki
 ///   links between documents, character/place sheets and the timeline.
 /// - A dirty-state indicator in the status bar.
+/// - Several computers (synced folder): a poll tells other computers this
+///   one has the project open and notices versions saved elsewhere, which
+///   are reloaded or combined in the conflict dialog; a read-only mode when
+///   another computer has the project open; where the project lives in the
+///   status bar; this computer's backups.
 ///
 /// When text changes outside the editors (find and replace, restoring a
 /// snapshot), pending edits are saved first and `reloadToken` is bumped so
@@ -28,7 +33,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
     api,
+    isExternalChange,
+    type ConflictCopy,
     type CurrentProjectDto,
+    type SyncStatus,
     type DocumentMetaDto,
     type RichDoc,
     type SearchHitDto,
@@ -41,6 +49,13 @@ import { PreferencesDialog } from "../dialogs/PreferencesDialog";
 import { SpellingDialog } from "../dialogs/SpellingDialog";
 import { StatsDialog } from "../dialogs/StatsDialog";
 import { WritingGoalsDialog } from "../dialogs/WritingGoalsDialog";
+import {
+    BackupsDialog,
+    ConflictCopiesDialog,
+    SyncConflictDialog,
+    deviceLabel,
+    providerFolderLabel,
+} from "../dialogs/SyncDialogs";
 import { ProgressBar } from "./ProgressBar";
 import { resetSpellcheck } from "./Spellcheck";
 import { LabelsDialog } from "../dialogs/LabelsDialog";
@@ -73,6 +88,8 @@ const INSPECTOR_DEFAULT_WIDTH = 300;
 const PANEL_MIN_WIDTH = 160;
 const PANEL_MAX_WIDTH = 900;
 const EDITOR_MIN_WIDTH = 320;
+/** How often to look for versions saved on another computer. */
+const SYNC_POLL_MS = 10_000;
 
 function loadWidth(key: string, def: number): number {
     const v = localStorage.getItem(key);
@@ -112,6 +129,21 @@ export function Workspace({ onBackToTemplates }: Props) {
     const [labelsOpen, setLabelsOpen] = useState(false);
     const [reloadToken, setReloadToken] = useState(0);
     const { prefs, save: savePrefs } = usePreferences();
+
+    // Several computers.
+    const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+    /** Name of another computer that has the project open ("" unnamed). */
+    const [openElsewhere, setOpenElsewhere] = useState<string | null>(null);
+    /** A newer version waits to be reloaded (automatic reload is off). */
+    const [newVersionFrom, setNewVersionFrom] = useState<string | null>(null);
+    /** Conflict dialog: the version on disk, or a conflict copy; `then`
+     *  continues what the conflict interrupted (closing, quitting). */
+    const [conflict, setConflict] = useState<null | { copy?: ConflictCopy; then?: () => void }>(null);
+    const [conflictCopies, setConflictCopies] = useState<ConflictCopy[]>([]);
+    const [backupsOpen, setBackupsOpen] = useState(false);
+    /** True while a version from another computer is being handled. */
+    const syncBusy = useRef(false);
+    const readOnly = syncStatus?.read_only ?? false;
 
     // Panel state.
     const [binderOpen, setBinderOpen] = useState(() => localStorage.getItem(BINDER_OPEN_KEY) !== "0");
@@ -187,11 +219,22 @@ export function Workspace({ onBackToTemplates }: Props) {
         }
     }, [selectedId]);
 
+    const refreshSyncStatus = useCallback(() => {
+        api.getSyncStatus()
+            .then(setSyncStatus)
+            .catch(() => undefined);
+    }, []);
+
     useEffect(() => {
         refresh();
         refreshGoals();
+        refreshSyncStatus();
         api.getSpelling()
             .then((s) => resetSpellcheck(s.language !== "off"))
+            .catch(() => undefined);
+        // Copies a cloud client made of this project, offered for combining.
+        api.listConflictCopies()
+            .then(setConflictCopies)
             .catch(() => undefined);
     }, []);
 
@@ -263,6 +306,124 @@ export function Workspace({ onBackToTemplates }: Props) {
         }
     }, []);
 
+    // ----- Versions saved on another computer -----
+
+    /** Take the version on disk (nothing unsaved here). */
+    const reloadFromOtherComputer = useCallback(
+        async (device: string) => {
+            const { changed } = await api.reloadFromDisk();
+            setNewVersionFrom(null);
+            await refresh();
+            textReplaced();
+            const shown = changed.slice(0, 3).join(", ") + (changed.length > 3 ? "…" : "");
+            setStatus(
+                changed.length
+                    ? t("Updated with changes from {device} ({titles})", { device: deviceLabel(device), titles: shown })
+                    : t("Updated from {device}", { device: deviceLabel(device) }),
+            );
+        },
+        [refresh, textReplaced],
+    );
+
+    /** Another computer saved the project: reload it when nothing here is
+     *  unsaved, otherwise combine both in the conflict dialog. `then` runs
+     *  once the versions agree again. */
+    const handleExternalChange = useCallback(
+        async (then?: () => void) => {
+            if (syncBusy.current) return;
+            syncBusy.current = true;
+            try {
+                await flushEditors();
+                const [dirty, poll] = await Promise.all([api.isProjectDirty(), api.syncPoll()]);
+                if (dirty) {
+                    // Stays busy until the conflict dialog closes.
+                    setConflict({ then });
+                    return;
+                }
+                if (then || readOnly || (prefs?.sync.auto_reload ?? true)) {
+                    await reloadFromOtherComputer(poll.saved_by);
+                    then?.();
+                } else {
+                    setNewVersionFrom(poll.saved_by);
+                }
+                syncBusy.current = false;
+            } catch (e) {
+                syncBusy.current = false;
+                setError(String(e));
+            }
+        },
+        [flushEditors, readOnly, prefs, reloadFromOtherComputer],
+    );
+
+    // Tell other computers this one still has the project open, and notice
+    // versions they saved.
+    useEffect(() => {
+        const id = window.setInterval(async () => {
+            if (syncBusy.current) return;
+            try {
+                const poll = await api.syncPoll();
+                setOpenElsewhere(poll.open_elsewhere);
+                if (poll.external_change) await handleExternalChange();
+            } catch {
+                // A folder that is briefly unavailable; try again next time.
+            }
+        }, SYNC_POLL_MS);
+        return () => window.clearInterval(id);
+    }, [handleExternalChange]);
+
+    const conflictDone = useCallback(
+        async (applied: boolean) => {
+            const done = conflict;
+            setConflict(null);
+            syncBusy.current = false;
+            if (!applied || !done) return;
+            await refresh();
+            textReplaced();
+            setProject((p) => (p ? { ...p, dirty: false } : p));
+            setStatus(t("Combined the changes from both versions."));
+            if (done.copy) {
+                const copy = done.copy;
+                setConflictCopies((list) => list.filter((c) => c.path !== copy.path));
+                if (confirm(t("Move the copy “{name}” to the recycle bin?", { name: copy.file_name }))) {
+                    api.trashConflictCopy(copy.path).catch((e) => setError(String(e)));
+                }
+            }
+            done.then?.();
+        },
+        [conflict, refresh, textReplaced],
+    );
+
+    /** Save and close the project here, then `after`. If another computer
+     *  saved it meanwhile, combine both versions first. */
+    const closeThen = useCallback(
+        async (after: () => void | Promise<void>) => {
+            await flushEditors();
+            try {
+                await api.closeProject();
+            } catch (e) {
+                if (isExternalChange(e)) {
+                    syncBusy.current = true;
+                    setConflict({ then: () => closeThen(after) });
+                } else {
+                    setError(String(e));
+                }
+                return;
+            }
+            await after();
+        },
+        [flushEditors],
+    );
+
+    const takeOver = useCallback(async () => {
+        try {
+            await api.syncTakeOver();
+            refreshSyncStatus();
+            setStatus(t("You can edit the project on this computer."));
+        } catch (e) {
+            setError(String(e));
+        }
+    }, [refreshSyncStatus]);
+
     // ----- Manual save -----
     const save = useCallback(async () => {
         try {
@@ -272,9 +433,10 @@ export function Workspace({ onBackToTemplates }: Props) {
             setStatus(t("Project saved"));
             setProject((p) => (p ? { ...p, dirty: false } : p));
         } catch (e) {
-            setError(String(e));
+            if (isExternalChange(e)) handleExternalChange();
+            else setError(String(e));
         }
-    }, []);
+    }, [handleExternalChange]);
 
     // ----- Autosave loop (interval from the preferences; 30s by default) -----
     const autosaveOn = prefs?.saving.autosave ?? true;
@@ -289,11 +451,12 @@ export function Workspace({ onBackToTemplates }: Props) {
                     setProject((p) => (p ? { ...p, dirty: false } : p));
                 }
             } catch (e) {
-                setError(String(e));
+                if (isExternalChange(e)) handleExternalChange();
+                else setError(String(e));
             }
         }, Math.max(5, autosaveSecs) * 1000);
         return () => window.clearInterval(id);
-    }, [autosaveOn, autosaveSecs]);
+    }, [autosaveOn, autosaveSecs, handleExternalChange]);
 
     // ----- Helpers for document actions -----
     function defaultParentId(): string | null {
@@ -331,10 +494,8 @@ export function Workspace({ onBackToTemplates }: Props) {
             try {
                 switch (a) {
                     case "new-project":
-                        onBackToTemplates();
-                        return;
                     case "open-project":
-                        onBackToTemplates();
+                        await closeThen(onBackToTemplates);
                         return;
                     case "new-document":
                         await createChild("document");
@@ -364,7 +525,9 @@ export function Workspace({ onBackToTemplates }: Props) {
                         setPrefsOpen(true);
                         return;
                     case "composition-mode":
-                        if (compositionOpen) {
+                        if (readOnly && !compositionOpen) {
+                            setStatus(t("The project is open read-only."));
+                        } else if (compositionOpen) {
                             setCompositionOpen(false);
                         } else if (selectedId) {
                             setCompositionOpen(true);
@@ -373,11 +536,14 @@ export function Workspace({ onBackToTemplates }: Props) {
                         }
                         return;
                     case "close-project":
-                        await api.closeProject();
-                        onBackToTemplates();
+                        await closeThen(onBackToTemplates);
                         return;
                     case "exit":
-                        await api.quitApp();
+                        await closeThen(() => api.quitApp());
+                        return;
+                    case "backups":
+                        await flushEditors();
+                        setBackupsOpen(true);
                         return;
                     case "undo":
                     case "redo":
@@ -564,7 +730,7 @@ export function Workspace({ onBackToTemplates }: Props) {
             }
         },
         // eslint-disable-next-line react-hooks/exhaustive-deps
-        [selectedId, project, binder, save, compositionOpen, prefs, savePrefs, flushEditors],
+        [selectedId, project, binder, save, compositionOpen, prefs, savePrefs, flushEditors, closeThen, readOnly],
     );
 
     // ----- Keyboard shortcuts -----
@@ -730,6 +896,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                     { separator: true, label: "" },
                     { label: "Save", action: "save", shortcut: "Ctrl+S" },
                     { label: "Save As…", action: "save-as" },
+                    { label: "Backups…", action: "backups" },
                     { separator: true, label: "" },
                     { label: "Compile…", action: "compile", shortcut: "Ctrl+Shift+P" },
                     { separator: true, label: "" },
@@ -857,6 +1024,32 @@ export function Workspace({ onBackToTemplates }: Props) {
             <MenuBar menus={menus} onAction={action} />
             <Toolbar onAction={action} disabledActions={disabledActions} />
 
+            {readOnly && (
+                <div className="sync-banner">
+                    <strong>{t("Read-only")}</strong>
+                    <span>
+                        {openElsewhere !== null
+                            ? t("This project is open on {device}. Changes saved there appear here.", {
+                                  device: deviceLabel(openElsewhere),
+                              })
+                            : t("Opened read-only. Changes saved on the other computer appear here.")}
+                    </span>
+                    <span className="spacer" />
+                    <button onClick={takeOver}>{t("Edit anyway")}</button>
+                </div>
+            )}
+            {!readOnly && newVersionFrom !== null && (
+                <div className="sync-banner">
+                    <span>
+                        {t("{device} saved a newer version of this project.", { device: deviceLabel(newVersionFrom) })}
+                    </span>
+                    <span className="spacer" />
+                    <button onClick={() => reloadFromOtherComputer(newVersionFrom).catch((e) => setError(String(e)))}>
+                        {t("Reload")}
+                    </button>
+                </div>
+            )}
+
             <div className="ws-body" style={{ fontSize: `${zoom}em` }}>
                 {binderOpen && (
                     <>
@@ -894,6 +1087,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                     registerEditorApi={registerEditorApi}
                     onPaneFocused={onPaneFocused}
                     suspended={compositionOpen}
+                    readOnly={readOnly}
                     reloadToken={reloadToken}
                     toolbarExtra={
                         <button
@@ -1005,6 +1199,23 @@ export function Workspace({ onBackToTemplates }: Props) {
                     </button>
                 )}
                 {project.dirty && <span className="status-dirty">● {t("Unsaved changes")}</span>}
+                {openElsewhere !== null && !readOnly && (
+                    <span className="status-sync-warn" title={t("Writing on both at once may mean choosing between versions later.")}>
+                        ⚠ {t("Also open on {device}", { device: deviceLabel(openElsewhere) })}
+                    </span>
+                )}
+                {syncStatus && (
+                    <span
+                        className="status-sync"
+                        title={
+                            syncStatus.provider
+                                ? t("Your cloud app copies this folder to your other computers.")
+                                : t("This folder is not synced: the project is only on this computer.")
+                        }
+                    >
+                        {syncStatus.provider ? `☁ ${providerFolderLabel(syncStatus.provider)}` : `💻 ${t("Only on this computer")}`}
+                    </span>
+                )}
                 <span>{project.path}</span>
             </div>
 
@@ -1088,6 +1299,35 @@ export function Workspace({ onBackToTemplates }: Props) {
                     }}
                     onClose={() => setTimelineOpen(false)}
                     onError={setError}
+                />
+            )}
+
+            {conflict && (
+                <SyncConflictDialog copyPath={conflict.copy?.path} onDone={conflictDone} onError={setError} />
+            )}
+
+            {!conflict && conflictCopies.length > 0 && (
+                <ConflictCopiesDialog
+                    copies={conflictCopies}
+                    onReview={async (copy) => {
+                        await flushEditors();
+                        syncBusy.current = true;
+                        setConflict({ copy });
+                    }}
+                    onIgnore={() => setConflictCopies([])}
+                />
+            )}
+
+            {backupsOpen && (
+                <BackupsDialog
+                    onClose={() => setBackupsOpen(false)}
+                    onError={setError}
+                    onRestored={async () => {
+                        setBackupsOpen(false);
+                        await refresh();
+                        textReplaced();
+                        setStatus(t("Backup restored."));
+                    }}
                 />
             )}
 

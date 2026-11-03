@@ -1,0 +1,167 @@
+/* Working from several computers: open warnings, conflicts, backups, the
+   read-only banner and the status-bar indicators. */
+
+.sync-dialog {
+    width: min(620px, calc(100vw - 32px));
+}
+.sync-dialog .dialog-body p {
+    margin: 0 0 10px;
+    line-height: 1.5;
+}
+.sync-dialog-icon {
+    font-size: 18px;
+}
+.sync-muted {
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+.sync-waiting {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary);
+}
+
+.sync-conflict {
+    width: min(760px, calc(100vw - 32px));
+}
+.sync-conflict .dialog-body {
+    max-height: 65vh;
+    overflow: auto;
+}
+
+.sync-items {
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin: 4px 0 12px;
+}
+.sync-item + .sync-item,
+.sync-items > .sync-item-row + .sync-item-row {
+    border-top: 1px solid var(--border-light);
+}
+.sync-item-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 10px;
+    min-height: 34px;
+}
+.sync-item-title {
+    flex: 1 1 auto;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-weight: 500;
+}
+.sync-item-where {
+    flex: 0 0 auto;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+.sync-item-result {
+    flex: 0 0 auto;
+    color: var(--success);
+    font-size: var(--font-size-sm);
+    min-width: 110px;
+}
+.sync-item-row select {
+    flex: 0 0 auto;
+    min-width: 150px;
+}
+.sync-diff {
+    padding: 4px 10px 10px;
+}
+.sync-diff .compare-legend {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 6px;
+    font-size: var(--font-size-sm);
+}
+.sync-diff .compare-text {
+    max-height: 240px;
+    overflow: auto;
+    white-space: pre-wrap;
+    background: var(--bg-input);
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius);
+    padding: 8px;
+}
+
+.sync-help-tabs {
+    display: flex;
+    gap: 6px;
+    margin: 6px 0 8px;
+}
+.sync-help-tabs button.active {
+    background: var(--bg-row-selected);
+    border-color: var(--accent);
+}
+.sync-help-steps {
+    margin: 0 0 12px;
+    padding-left: 22px;
+    line-height: 1.6;
+}
+
+/* First-run card on the project selector. */
+.sync-tip {
+    margin: 0 20px 12px;
+    padding: 12px 14px;
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--accent);
+    border-radius: var(--radius);
+    background: var(--bg-elevated);
+}
+.sync-tip-title {
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.sync-tip-text {
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+    margin-bottom: 10px;
+}
+.sync-tip-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* Workspace: read-only banner and new-version notice above the editor. */
+.sync-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 12px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-size: var(--font-size-sm);
+}
+.sync-banner strong {
+    color: var(--warning);
+}
+.sync-banner .spacer {
+    flex: 1 1 auto;
+}
+
+/* Status bar. */
+.status-sync {
+    color: var(--text-muted);
+    white-space: nowrap;
+}
+.status-sync-warn {
+    color: var(--warning);
+    white-space: nowrap;
+}
+
+/* Preferences: default folder row. */
+.prefs-folder-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+.prefs-folder-row input {
+    flex: 1 1 auto;
+    min-width: 0;
+}
