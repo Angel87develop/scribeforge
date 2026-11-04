@@ -207,6 +207,145 @@
     cursor: pointer;
 }
 
+/* Personalization: theme cards, extracted colours and the wallpaper. */
+.prefs-themes {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 12px;
+}
+.prefs-theme {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 6px;
+    border: 1px solid var(--border-light);
+    border-radius: var(--radius-lg);
+    font-size: var(--font-size-sm);
+    cursor: pointer;
+}
+.prefs-theme.active {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 1px var(--accent);
+}
+.prefs-theme input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+.prefs-theme:has(input:focus-visible) {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+}
+.prefs-theme-sample {
+    --s-bar: #e0dccf;
+    --s-side: #e4e0d8;
+    --s-page: #ffffff;
+    --s-accent: #6b5b3e;
+    position: relative;
+    display: block;
+    width: 92px;
+    height: 58px;
+    border-radius: var(--radius);
+    border: 1px solid var(--border);
+    background: center / cover no-repeat;
+    overflow: hidden;
+}
+.prefs-theme-sample.sample-dark {
+    --s-bar: #232220;
+    --s-side: #1a1916;
+    --s-page: #2d2c25;
+    --s-accent: #8a7a52;
+    background-color: #1e1d1a;
+}
+.prefs-theme-sample.sample-system {
+    background-image: linear-gradient(135deg, transparent 50%, #1e1d1a 50%);
+}
+.prefs-theme-sample.sample-auto:not([style]) {
+    background-image: linear-gradient(135deg, #c98b5a, #5a7fa8 55%, #4a6b4a);
+}
+.prefs-theme-sample > span {
+    position: absolute;
+    opacity: 0.88;
+}
+.prefs-theme-sample .bar {
+    left: 0;
+    right: 0;
+    top: 0;
+    height: 10px;
+    background: var(--s-bar);
+    border-bottom: 2px solid var(--s-accent);
+}
+.prefs-theme-sample .side {
+    left: 0;
+    top: 10px;
+    bottom: 0;
+    width: 22px;
+    background: var(--s-side);
+}
+.prefs-theme-sample .page {
+    left: 30px;
+    right: 8px;
+    top: 18px;
+    bottom: 0;
+    background: var(--s-page);
+}
+.prefs-theme-sample.sample-system > span {
+    opacity: 0.6;
+}
+.prefs-palette {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 12px;
+}
+.prefs-swatches {
+    display: flex;
+    gap: 6px;
+}
+.prefs-swatch {
+    width: 26px;
+    height: 26px;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+}
+.prefs-swatch.accent {
+    box-shadow: 0 0 0 2px var(--bg-elevated), 0 0 0 4px var(--accent);
+}
+.prefs-wallpaper {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.prefs-wallpaper-preview {
+    width: 192px;
+    height: 108px;
+    flex-shrink: 0;
+    padding: 8px;
+    border: 1px dashed var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--bg-input) center / cover no-repeat;
+    color: var(--text-muted);
+    font-size: var(--font-size-sm);
+}
+.prefs-wallpaper-preview[style] {
+    border-style: solid;
+}
+.prefs-wallpaper-preview.drag-over {
+    border: 2px dashed var(--accent);
+}
+.prefs-wallpaper-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.prefs-wallpaper-actions button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
 /* ---- Compile ---- */
 
 .dialog.compile-dialog {

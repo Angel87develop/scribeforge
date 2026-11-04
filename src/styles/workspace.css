@@ -161,7 +161,7 @@ body.col-resizing * {
 .ws-editor {
     flex: 1 1 auto;
     overflow-y: auto;
-    background: var(--bg-elevated);
+    background: var(--bg-editor, var(--bg-elevated));
     padding: 32px 48px;
     min-width: 0;
 }

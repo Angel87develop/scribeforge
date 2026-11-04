@@ -95,6 +95,8 @@ pub fn run() {
             commands::compile_preview,
             commands::get_preferences,
             commands::update_preferences,
+            commands::set_wallpaper,
+            commands::get_wallpaper,
             commands::get_writing_goals,
             commands::set_writing_goals,
             commands::reset_writing_session,

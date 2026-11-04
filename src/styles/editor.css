@@ -100,7 +100,7 @@
 .ws-editor-pane {
     flex: 1 1 auto;
     overflow-y: auto;
-    background: var(--bg-elevated);
+    background: var(--bg-editor, var(--bg-elevated));
     min-width: 0;
     position: relative;
 }

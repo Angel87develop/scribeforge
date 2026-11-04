@@ -115,7 +115,7 @@ export function ImageAttachments({ documentId, onError, expanded = false }: Prop
 
     // ---- Adding images ----
 
-    function readFileAsDataUrl(file: File): Promise<string> {
+    function readFileAsDataUrl(file: Blob): Promise<string> {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
             reader.onload = () => resolve(reader.result as string);
@@ -128,12 +128,15 @@ export function ImageAttachments({ documentId, onError, expanded = false }: Prop
         if (!files || files.length === 0) return;
         setBusy(true);
         for (const file of Array.from(files)) {
-            if (!file.type.startsWith("image/")) {
+            const type = imageType(file);
+            if (!type) {
                 onError(t("“{name}” is not an image (got {type}).", { name: file.name, type: file.type || t("unknown type") }));
                 continue;
             }
             try {
-                const dataUrl = await readFileAsDataUrl(file);
+                // Files dropped from the system sometimes arrive without a type.
+                const blob = file.type === type ? file : new Blob([file], { type });
+                const dataUrl = await readFileAsDataUrl(blob);
                 const dto = await api.addImageAttachment(documentId, dataUrl, file.name);
                 setAttachments((prev) => [...prev, dto]);
             } catch (e) {
@@ -163,12 +166,15 @@ export function ImageAttachments({ documentId, onError, expanded = false }: Prop
     function onDragOver(e: React.DragEvent) {
         e.preventDefault();
         e.stopPropagation();
+        e.dataTransfer.dropEffect = "copy";
         setDragOver(true);
     }
 
     function onDragLeave(e: React.DragEvent) {
         e.preventDefault();
         e.stopPropagation();
+        // Moving over a child element also fires dragleave; only a real exit counts.
+        if (e.relatedTarget instanceof Node && e.currentTarget.contains(e.relatedTarget)) return;
         setDragOver(false);
     }
 
@@ -356,6 +362,25 @@ export function ImageAttachments({ documentId, onError, expanded = false }: Prop
             )}
         </div>
     );
+}
+
+const EXTENSION_TYPES: Record<string, string> = {
+    png: "image/png",
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    gif: "image/gif",
+    webp: "image/webp",
+    bmp: "image/bmp",
+    svg: "image/svg+xml",
+};
+
+/// The image type of a file, from its type or else its extension; null when
+/// it is not an image.
+function imageType(file: File): string | null {
+    if (file.type.startsWith("image/")) return file.type;
+    if (file.type) return null;
+    const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+    return EXTENSION_TYPES[ext] ?? null;
 }
 
 /// Size an image is drawn at. Fitted: as wide as the panel and no taller

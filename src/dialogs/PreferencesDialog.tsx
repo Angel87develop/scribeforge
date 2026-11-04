@@ -1,10 +1,10 @@
-/// Preferences window: theme, writing options, writing format profiles
+/// Preferences window: personalization (theme, wallpaper, colours), writing options, writing format profiles
 /// (font, spacing, indents, export page setup), autosave, backups, the
 /// composition-mode defaults and the interface language.
 ///
 /// Edits are kept in a draft until Save; Cancel (or Escape) discards them.
-/// Format changes are previewed live in the editor behind the dialog and put
-/// back on Cancel. The backend clamps every value to a safe range and the
+/// Format and appearance changes are previewed live behind the dialog and
+/// put back on Cancel. The backend clamps every value to a safe range and the
 /// dialog shows what was actually stored.
 
 import { useCallback, useEffect, useState } from "react";
@@ -12,17 +12,20 @@ import type { Preferences } from "../services/api";
 import { applyEditorFormat, usePreferences } from "../services/preferences";
 import { IconSettings } from "../components/Icons";
 import { FormatPreferences } from "./FormatPreferences";
+import { PersonalizationPreferences } from "./PersonalizationPreferences";
+import { applyAppearance, applyAppearanceOf, loadWallpaper, type WallpaperLook } from "../services/wallpaper";
 import { SyncHelpDialog } from "./SyncDialogs";
 import { api } from "../services/api";
 import "../styles/sync.css";
 import "../styles/dialogs.css";
 import { LANGUAGES, t } from "../i18n";
 
-type Tab = "general" | "editor" | "format" | "saving" | "sync" | "composition" | "languages";
+type Tab = "general" | "personalization" | "editor" | "format" | "saving" | "sync" | "composition" | "languages";
 
 /** Labels are English; translated when drawn. */
 const TABS: { id: Tab; label: string }[] = [
     { id: "general", label: "General" },
+    { id: "personalization", label: "Personalization" },
     { id: "editor", label: "Editor" },
     { id: "format", label: "Format" },
     { id: "saving", label: "Saving" },
@@ -43,6 +46,8 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
     const [tab, setTab] = useState<Tab>("general");
     const [saving, setSaving] = useState(false);
     const [syncHelp, setSyncHelp] = useState(false);
+    // The draft's wallpaper, loaded.
+    const [look, setLook] = useState<WallpaperLook | null>(null);
 
     useEffect(() => {
         if (!draft && prefs) setDraft(prefs);
@@ -53,8 +58,31 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
         if (draft) applyEditorFormat(draft, formatProfiles);
     }, [draft, formatProfiles]);
 
+    const wallpaperFile = draft?.appearance.wallpaper.file ?? "";
+    useEffect(() => {
+        if (!wallpaperFile) {
+            setLook(null);
+            return;
+        }
+        let current = true;
+        loadWallpaper(wallpaperFile)
+            .then((l) => current && setLook(l))
+            .catch((e) => current && onError(String(e)));
+        return () => {
+            current = false;
+        };
+    }, [wallpaperFile, onError]);
+
+    // Live preview of the theme and wallpaper; waits for a new image to load.
+    useEffect(() => {
+        if (draft && (!wallpaperFile || look)) applyAppearance(draft, look);
+    }, [draft, wallpaperFile, look]);
+
     const cancel = useCallback(() => {
-        if (prefs) applyEditorFormat(prefs, formatProfiles);
+        if (prefs) {
+            applyEditorFormat(prefs, formatProfiles);
+            applyAppearanceOf(prefs);
+        }
         onClose();
     }, [prefs, formatProfiles, onClose]);
 
@@ -115,18 +143,6 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
                         <div className="prefs-panel">
                             {tab === "general" && (
                                 <>
-                                    <Field label={t("Theme")}>
-                                        <select
-                                            value={draft.general.theme}
-                                            onChange={(e) =>
-                                                patch("general", { theme: e.target.value as Preferences["general"]["theme"] })
-                                            }
-                                        >
-                                            <option value="light">{t("Light")}</option>
-                                            <option value="dark">{t("Dark")}</option>
-                                            <option value="system">{t("Same as Windows")}</option>
-                                        </select>
-                                    </Field>
                                     <Field label={t("Recent projects to remember")}>
                                         <input
                                             type="number"
@@ -139,6 +155,15 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
                                         />
                                     </Field>
                                 </>
+                            )}
+
+                            {tab === "personalization" && (
+                                <PersonalizationPreferences
+                                    draft={draft}
+                                    look={look}
+                                    onChange={setDraft}
+                                    onError={onError}
+                                />
                             )}
 
                             {tab === "editor" && (
@@ -320,23 +345,7 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
                                     <p className="prefs-note">
                                         {t("Defaults for composition mode. You can also change them from its bottom bar while writing.")}
                                     </p>
-                                    <div className="prefs-colors">
-                                        <ColorField
-                                            label={t("Background")}
-                                            value={draft.composition.background}
-                                            onChange={(v) => patch("composition", { background: v })}
-                                        />
-                                        <ColorField
-                                            label={t("Page")}
-                                            value={draft.composition.page_color}
-                                            onChange={(v) => patch("composition", { page_color: v })}
-                                        />
-                                        <ColorField
-                                            label={t("Text")}
-                                            value={draft.composition.text_color}
-                                            onChange={(v) => patch("composition", { text_color: v })}
-                                        />
-                                    </div>
+                                    <p className="prefs-note">{t("Its colours are in Personalization.")}</p>
                                     <Field label={t("Page width: {px}px", { px: draft.composition.page_width_px })}>
                                         <input
                                             type="range"
@@ -354,18 +363,6 @@ export function PreferencesDialog({ onClose, onError, onSaved }: Props) {
                                             max={32}
                                             value={draft.composition.font_size}
                                             onChange={(e) => patch("composition", { font_size: num(e.target.value, 18) })}
-                                        />
-                                    </Field>
-                                    <Field
-                                        label={t("Page opacity: {pct}%", { pct: Math.round(draft.composition.page_opacity * 100) })}
-                                    >
-                                        <input
-                                            type="range"
-                                            min={0}
-                                            max={1}
-                                            step={0.05}
-                                            value={draft.composition.page_opacity}
-                                            onChange={(e) => patch("composition", { page_opacity: num(e.target.value, 1) })}
                                         />
                                     </Field>
                                 </>
@@ -413,15 +410,6 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
             <span className="form-field-label">{label}</span>
             {children}
             {hint && <span className="hint">{hint}</span>}
-        </label>
-    );
-}
-
-function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (v: string) => void }) {
-    return (
-        <label className="prefs-color">
-            <input type="color" value={value} onChange={(e) => onChange(e.target.value)} />
-            <span>{label}</span>
         </label>
     );
 }

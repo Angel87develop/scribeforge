@@ -766,19 +766,11 @@ fn attachment_dto(att: &ImageAttachment, document_id: Uuid, bytes: &[u8], mime: 
     }
 }
 
-/// Add an image attachment to a document's Notes tab. The bytes arrive as a
-/// base64 data URL from the frontend (drag-and-drop or file picker).
-#[tauri::command]
-pub fn add_image_attachment(
-    state: State<'_, AppState>,
-    document_id: String,
-    data_url: String,
-    filename: Option<String>,
-) -> AppResult<AttachmentDto> {
+/// Decode "data:<mime>;base64,<payload>" into its type and bytes, checking
+/// the type is an allowed image, the size is within the limit and the bytes
+/// really are that kind of image.
+fn decode_image_data_url(data_url: &str) -> AppResult<(String, Vec<u8>)> {
     use base64::Engine;
-    let doc_id = parse_uuid(&document_id)?;
-
-    // Parse "data:<mime>;base64,<payload>"
     let rest = data_url
         .strip_prefix("data:")
         .ok_or_else(|| AppError::Other("invalid data URL: missing 'data:' prefix".into()))?;
@@ -808,6 +800,20 @@ pub fn add_image_attachment(
     }
     // Defensive: sniff magic bytes to confirm the payload matches the claim.
     verify_image_magic(&bytes, &mime)?;
+    Ok((mime, bytes))
+}
+
+/// Add an image attachment to a document's Notes tab. The bytes arrive as a
+/// base64 data URL from the frontend (drag-and-drop or file picker).
+#[tauri::command]
+pub fn add_image_attachment(
+    state: State<'_, AppState>,
+    document_id: String,
+    data_url: String,
+    filename: Option<String>,
+) -> AppResult<AttachmentDto> {
+    let doc_id = parse_uuid(&document_id)?;
+    let (mime, bytes) = decode_image_data_url(&data_url)?;
 
     let filename = filename.unwrap_or_else(|| format!("image.{}", extension_hint(&mime)));
 
@@ -1128,7 +1134,64 @@ pub fn update_preferences(state: State<'_, AppState>, prefs: PreferencesDto) -> 
         preferences_of(&s)
     };
     state.settings.read().save()?;
+    if let Ok(dir) = crate::settings::Settings::wallpaper_dir() {
+        remove_unused_wallpapers(&dir, &[&stored.appearance.wallpaper.file]);
+    }
     Ok(stored)
+}
+
+/// Store a wallpaper image (a data URL; the interface sends it already
+/// scaled down) next to the settings file and return its file name, to be
+/// put in `appearance.wallpaper.file`. Images no longer chosen are removed;
+/// the one in the saved preferences is kept until they change.
+#[tauri::command]
+pub fn set_wallpaper(state: State<'_, AppState>, data_url: String) -> AppResult<String> {
+    let (mime, bytes) = decode_image_data_url(&data_url)?;
+    let ext = match mime.as_str() {
+        "image/jpeg" => "jpg",
+        "image/png" => "png",
+        "image/webp" => "webp",
+        _ => return Err(AppError::Other(format!("unsupported wallpaper type: {mime} (allowed: JPEG, PNG, WebP)"))),
+    };
+    let dir = crate::settings::Settings::wallpaper_dir()?;
+    std::fs::create_dir_all(&dir)?;
+    let name = format!("wallpaper-{}.{ext}", Uuid::new_v4().simple());
+    std::fs::write(dir.join(&name), &bytes)?;
+    let saved = state.settings.read().appearance.wallpaper.file.clone();
+    remove_unused_wallpapers(&dir, &[&saved, &name]);
+    Ok(name)
+}
+
+/// The stored wallpaper image as a data URL.
+#[tauri::command]
+pub fn get_wallpaper(file: String) -> AppResult<String> {
+    use base64::Engine;
+    if !crate::settings::is_wallpaper_file_name(&file) {
+        return Err(AppError::Other(format!("invalid wallpaper name: {file}")));
+    }
+    let bytes = std::fs::read(crate::settings::Settings::wallpaper_dir()?.join(&file))?;
+    let mime = match file.rsplit_once('.').map(|(_, e)| e) {
+        Some("png") => "image/png",
+        Some("webp") => "image/webp",
+        _ => "image/jpeg",
+    };
+    let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
+    Ok(format!("data:{mime};base64,{b64}"))
+}
+
+/// Delete wallpaper files other than `keep`. Failures only cost disk space.
+fn remove_unused_wallpapers(dir: &Path, keep: &[&str]) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if crate::settings::is_wallpaper_file_name(&name) && !keep.contains(&name.as_str()) {
+            if let Err(e) = std::fs::remove_file(entry.path()) {
+                log::warn!("Could not remove old wallpaper {name}: {e}");
+            }
+        }
+    }
 }
 
 #[tauri::command]

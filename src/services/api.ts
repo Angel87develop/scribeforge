@@ -428,7 +428,8 @@ export interface CompileRequest {
 export interface Preferences {
     general: {
         language: string;
-        theme: "light" | "dark" | "system";
+        /** "auto" takes the colours from the wallpaper. */
+        theme: "light" | "dark" | "system" | "auto";
         open_last_project_on_start: boolean;
         confirm_deletions: boolean;
         recent_max: number;
@@ -449,6 +450,15 @@ export interface Preferences {
         show_binder: boolean;
         show_inspector: boolean;
         density: string;
+        wallpaper: {
+            /** Stored image (see `setWallpaper`); empty means none. */
+            file: string;
+            /** How much of the image shows through, 0 to 1. */
+            visibility: number;
+            /** Opacity of the panels over the image, 0.3 to 1. */
+            panel_opacity: number;
+            blur_px: number;
+        };
     };
     saving: {
         autosave: boolean;
@@ -668,6 +678,9 @@ export const api = {
     getPreferences: (): Promise<Preferences> => invoke("get_preferences"),
     updatePreferences: (prefs: Preferences): Promise<Preferences> =>
         invoke("update_preferences", { prefs }),
+    /** Stores the image and returns its name for `appearance.wallpaper.file`. */
+    setWallpaper: (dataUrl: string): Promise<string> => invoke("set_wallpaper", { dataUrl }),
+    getWallpaper: (file: string): Promise<string> => invoke("get_wallpaper", { file }),
     pickDirectory: (title?: string): Promise<string | null> =>
         invoke("pick_directory", { title }),
     getDefaultProjectDir: (): Promise<string> => invoke("get_default_project_dir"),

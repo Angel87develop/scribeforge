@@ -61,8 +61,10 @@ pub struct GeneralSettings {
     /// Interface language: "en" or "es".
     #[serde(default = "default_language")]
     pub language: String,
+    /// "light" | "dark" | "system", or "auto": colours taken from the
+    /// wallpaper (see `WallpaperSettings`).
     #[serde(default = "default_theme")]
-    pub theme: String, // "light" | "dark" | "system"
+    pub theme: String,
     #[serde(default = "default_true")]
     pub open_last_project_on_start: bool,
     #[serde(default = "default_true")]
@@ -139,6 +141,8 @@ pub struct AppearanceSettings {
     pub show_inspector: bool,
     #[serde(default = "default_density")]
     pub density: String, // "comfortable" | "compact"
+    #[serde(default)]
+    pub wallpaper: WallpaperSettings,
 }
 
 impl Default for AppearanceSettings {
@@ -148,8 +152,49 @@ impl Default for AppearanceSettings {
             show_binder: true,
             show_inspector: true,
             density: default_density(),
+            wallpaper: WallpaperSettings::default(),
         }
     }
+}
+
+/// Image shown behind the interface, with the panels see-through over it.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WallpaperSettings {
+    /// File name inside `Settings::wallpaper_dir()`; empty means no wallpaper.
+    #[serde(default)]
+    pub file: String,
+    /// How much of the image shows through the theme colour, 0.0 to 1.0.
+    #[serde(default = "default_wallpaper_visibility")]
+    pub visibility: f32,
+    /// Opacity of the panels over the image, 0.3 to 1.0.
+    #[serde(default = "default_wallpaper_panel_opacity")]
+    pub panel_opacity: f32,
+    /// Blur applied to the image, in CSS px.
+    #[serde(default)]
+    pub blur_px: u32,
+}
+
+impl Default for WallpaperSettings {
+    fn default() -> Self {
+        Self {
+            file: String::new(),
+            visibility: default_wallpaper_visibility(),
+            panel_opacity: default_wallpaper_panel_opacity(),
+            blur_px: 0,
+        }
+    }
+}
+
+/// A wallpaper file name as stored by `set_wallpaper`: no folders, only
+/// `wallpaper-<hex>.<jpg|png|webp>`.
+pub fn is_wallpaper_file_name(name: &str) -> bool {
+    let Some((stem, ext)) = name.rsplit_once('.') else {
+        return false;
+    };
+    let Some(id) = stem.strip_prefix("wallpaper-") else {
+        return false;
+    };
+    matches!(ext, "jpg" | "png" | "webp") && !id.is_empty() && id.chars().all(|c| c.is_ascii_hexdigit())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -296,6 +341,12 @@ fn default_autosave_interval() -> u64 {
 fn default_backups() -> u32 {
     5
 }
+fn default_wallpaper_visibility() -> f32 {
+    0.8
+}
+fn default_wallpaper_panel_opacity() -> f32 {
+    0.82
+}
 fn default_comp_background() -> String {
     "#2b2620".to_string()
 }
@@ -326,6 +377,13 @@ impl Settings {
         let dir = dirs::config_dir()
             .ok_or_else(|| AppError::Other("no OS config directory available".into()))?;
         Ok(dir.join("com.scribeforge.app").join("settings.json"))
+    }
+
+    /// Folder holding the wallpaper image, next to the settings file.
+    pub fn wallpaper_dir() -> AppResult<PathBuf> {
+        let file = Self::config_file_path()?;
+        let dir = file.parent().ok_or_else(|| AppError::Other("no settings folder".into()))?;
+        Ok(dir.join("wallpapers"))
     }
 
     pub fn load() -> Self {
@@ -408,7 +466,7 @@ impl Settings {
         if !matches!(g.language.as_str(), "en" | "es") {
             g.language = default_language();
         }
-        if !matches!(g.theme.as_str(), "light" | "dark" | "system") {
+        if !matches!(g.theme.as_str(), "light" | "dark" | "system" | "auto") {
             g.theme = default_theme();
         }
         g.recent_max = g.recent_max.clamp(1, 50);
@@ -437,6 +495,20 @@ impl Settings {
         let sv = &mut self.saving;
         sv.autosave_interval_secs = sv.autosave_interval_secs.clamp(5, 3600);
         sv.backup_count = sv.backup_count.clamp(1, 50);
+
+        let w = &mut self.appearance.wallpaper;
+        if !w.file.is_empty() && !is_wallpaper_file_name(&w.file) {
+            w.file.clear();
+        }
+        if !w.visibility.is_finite() {
+            w.visibility = default_wallpaper_visibility();
+        }
+        w.visibility = w.visibility.clamp(0.0, 1.0);
+        if !w.panel_opacity.is_finite() {
+            w.panel_opacity = default_wallpaper_panel_opacity();
+        }
+        w.panel_opacity = w.panel_opacity.clamp(0.3, 1.0);
+        w.blur_px = w.blur_px.min(40);
 
         let c = &mut self.composition;
         if !is_hex_color(&c.background) {

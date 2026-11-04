@@ -22,6 +22,7 @@
         "fullscreen": false,
         "center": true,
         "decorations": true,
+        "dragDropEnabled": false,
         "theme": "Light"
       }
     ],

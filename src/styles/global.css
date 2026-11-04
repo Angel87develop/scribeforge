@@ -95,6 +95,25 @@
     --separator: #2e2d26;
 }
 
+/* Wallpaper behind the interface (see services/wallpaper.ts). The large
+ * surfaces become see-through and the window background transparent. */
+#sf-wallpaper {
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+}
+#sf-wallpaper > div {
+    position: absolute;
+    inset: 0;
+}
+.sf-wallpaper-image {
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+
 *,
 *::before,
 *::after {
