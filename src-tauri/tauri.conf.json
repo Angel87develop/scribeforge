@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "ScribeForge — Project Templates",
+        "title": "ScribeForge",
         "width": 1120,
         "height": 720,
         "minWidth": 860,
@@ -21,7 +21,7 @@
         "resizable": true,
         "fullscreen": false,
         "center": true,
-        "decorations": true,
+        "decorations": false,
         "dragDropEnabled": false,
         "theme": "Light"
       }

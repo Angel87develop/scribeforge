@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { TitleBar } from "./components/TitleBar";
 import { PreferencesProvider } from "./services/preferences";
 import "./styles/global.css";
 
@@ -9,6 +10,11 @@ if (!container) {
 }
 createRoot(container).render(
     <PreferencesProvider>
-        <App />
+        <div className="app-frame">
+            <TitleBar />
+            <div className="app-content">
+                <App />
+            </div>
+        </div>
     </PreferencesProvider>,
 );

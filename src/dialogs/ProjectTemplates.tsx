@@ -8,7 +8,6 @@ import { api, type CategoryDto, type OpenProjectResult, type TemplatePreview } f
 import { usePreferences } from "../services/preferences";
 import { categoryIcon } from "../templates/categoryIcons";
 import {
-    IconBook,
     IconClock,
     IconClose,
     IconDocument,
@@ -129,17 +128,6 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
 
     return (
         <div className="templates-root">
-            {/* Banner */}
-            <div className="templates-banner">
-                <div className="templates-banner-icon">
-                    <IconBook size={22} />
-                </div>
-                <div>
-                    <div className="templates-banner-title">ScribeForge</div>
-                    <div className="templates-banner-subtitle">{t("Project Templates")}</div>
-                </div>
-            </div>
-
             {/* Body */}
             <div className="templates-body">
                 {/* Sidebar */}
