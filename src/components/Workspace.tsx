@@ -65,6 +65,8 @@ import { TimelineView } from "./TimelineView";
 import { setLinkFollower, setLinkTargets } from "./WikiLinks";
 import { Binder } from "./Binder";
 import { Composition } from "./Composition";
+import { PomodoroButton, PomodoroNotice } from "./Pomodoro";
+import { pomodoro } from "../services/pomodoro";
 import { Inspector } from "./Inspector";
 import { MenuBar, type MenuAction, type MenuDef } from "./MenuBar";
 import { SplitEditor } from "./SplitEditor";
@@ -181,6 +183,8 @@ export function Workspace({ onBackToTemplates }: Props) {
             .then(setGoals)
             .catch(() => undefined);
     }, []);
+    // The pomodoro counts the words of each sprint from the session counter.
+    useEffect(() => pomodoro.setSessionWords(goals?.session_added), [goals]);
     const goalsTimer = useRef<number | null>(null);
     const scheduleGoals = useCallback(() => {
         if (goalsTimer.current !== null) return;
@@ -1155,6 +1159,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                         })}
                     </span>
                 )}
+                <PomodoroButton />
                 {goals && (goals.session_goal > 0 || goals.session_added > 0) && (
                     <button
                         type="button"
@@ -1224,6 +1229,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                 <span>{project.path}</span>
             </div>
 
+            <PomodoroNotice />
             {compositionOpen && selected && (
                 <Composition
                     target={selected}

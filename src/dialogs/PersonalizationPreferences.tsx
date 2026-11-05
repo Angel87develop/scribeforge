@@ -6,7 +6,7 @@
 /// - Wallpaper: an image behind the interface, chosen with the button or
 ///   dropped on the preview, with how much of it shows, how opaque the
 ///   panels are over it and how blurred it is.
-/// - Composition mode colours.
+/// - Composition mode: the wallpaper behind the page, and the colours.
 ///
 /// Every change edits the preferences draft; the dialog previews it live and
 /// its Save stores it.
@@ -200,6 +200,26 @@ export function PersonalizationPreferences({ draft, look, onChange, onError }: P
             )}
 
             <h4 className="prefs-subhead">{t("Composition mode")}</h4>
+            <label className="prefs-check">
+                <input
+                    type="checkbox"
+                    checked={draft.composition.use_wallpaper}
+                    disabled={!hasWallpaper}
+                    onChange={(e) =>
+                        setComposition({
+                            use_wallpaper: e.target.checked,
+                            // A solid page would hide the wallpaper completely.
+                            page_opacity:
+                                e.target.checked && draft.composition.page_opacity >= 1
+                                    ? 0.82
+                                    : draft.composition.page_opacity,
+                        })
+                    }
+                />
+                {hasWallpaper
+                    ? t("Show the wallpaper behind the page, tinted with the background colour")
+                    : t("Show the wallpaper behind the page (choose a wallpaper above first)")}
+            </label>
             <div className="prefs-colors">
                 <ColorField
                     label={t("Background")}

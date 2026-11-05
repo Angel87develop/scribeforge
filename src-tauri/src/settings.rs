@@ -272,6 +272,10 @@ pub struct CompositionSettings {
     /// Opacity of the page over the backdrop, 0.0 to 1.0.
     #[serde(default = "default_comp_opacity")]
     pub page_opacity: f32,
+    /// Show the wallpaper (`appearance.wallpaper`) behind the page, tinted
+    /// with `background`.
+    #[serde(default)]
+    pub use_wallpaper: bool,
 }
 
 impl Default for CompositionSettings {
@@ -283,6 +287,7 @@ impl Default for CompositionSettings {
             page_width_px: default_comp_width(),
             font_size: default_comp_font_size(),
             page_opacity: default_comp_opacity(),
+            use_wallpaper: false,
         }
     }
 }

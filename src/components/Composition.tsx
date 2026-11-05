@@ -1,10 +1,12 @@
 /// Composition mode: full-screen, distraction-free writing.
 ///
-/// Shows the selected document alone on a page over a plain backdrop; a
-/// folder (or a document with subdocuments) is shown as Scrivenings without
-/// section titles. Background, page and text colours, page width, text size
-/// and page opacity are adjustable from a bar that appears when the pointer
-/// reaches the bottom of the screen. Changes are kept as the new defaults.
+/// Shows the selected document alone on a page over a plain backdrop, or
+/// over the wallpaper (tinted with the backdrop colour, with a frosted
+/// semi-transparent page); a folder (or a document with subdocuments) is
+/// shown as Scrivenings without section titles. Background, wallpaper, page
+/// and text colours, page width, text size and page opacity are adjustable
+/// from a bar that appears when the pointer reaches the bottom of the
+/// screen. Changes are kept as the new defaults.
 ///
 /// The window goes full screen while composition mode is open; Escape (or
 /// F11) leaves it. The workspace editors are unmounted meanwhile, so the
@@ -17,7 +19,9 @@ import { usePreferences } from "../services/preferences";
 import { descendants, displayTitle, isFolderKind } from "./binderTree";
 import { RichTextEditor, type EditorApi } from "./RichTextEditor";
 import { Scrivenings } from "./Scrivenings";
-import { IconClose } from "./Icons";
+import { IconClose, IconImage } from "./Icons";
+import { loadWallpaper, type WallpaperLook } from "../services/wallpaper";
+import { PomodoroPill, PomodoroToggle } from "./Pomodoro";
 import "../styles/composition.css";
 import { t, tn } from "../i18n";
 
@@ -30,7 +34,11 @@ const DEFAULTS: CompositionPrefs = {
     page_width_px: 720,
     font_size: 18,
     page_opacity: 1,
+    use_wallpaper: false,
 };
+
+/** Page opacity given when the wallpaper is turned on over a solid page. */
+const WALLPAPER_PAGE_OPACITY = 0.82;
 
 const BACKDROPS = ["#2b2620", "#1d2430", "#2f3a2f", "#3b2f3f", "#e8e3d8", "#000000"];
 
@@ -68,8 +76,25 @@ interface Props {
 
 export function Composition({ target, binder, onContentChanged, registerEditorApi, onExit, onError }: Props) {
     const { prefs, save } = usePreferences();
-    const [look, setLook] = useState<CompositionPrefs>(prefs?.composition ?? DEFAULTS);
+    const [look, setLook] = useState<CompositionPrefs>({ ...DEFAULTS, ...prefs?.composition });
     const [doc, setDoc] = useState<DocumentDto | null>(null);
+    const wallpaper = prefs?.appearance.wallpaper;
+    const [image, setImage] = useState<WallpaperLook | null>(null);
+    const showWallpaper = look.use_wallpaper && !!wallpaper?.file;
+
+    useEffect(() => {
+        if (!showWallpaper || !wallpaper?.file) {
+            setImage(null);
+            return;
+        }
+        let current = true;
+        loadWallpaper(wallpaper.file)
+            .then((l) => current && setImage(l))
+            .catch((e) => current && onError(String(e)));
+        return () => {
+            current = false;
+        };
+    }, [showWallpaper, wallpaper?.file, onError]);
 
     const grouped = isFolderKind(target.kind) || binder.some((d) => d.parent === target.id);
 
@@ -133,8 +158,30 @@ export function Composition({ target, binder, onContentChanged, registerEditorAp
         "--comp-text": look.text_color,
     } as React.CSSProperties;
 
+    const toggleWallpaper = () => {
+        const on = !look.use_wallpaper;
+        adjust({
+            use_wallpaper: on,
+            // A solid page would hide the wallpaper completely.
+            page_opacity: on && look.page_opacity >= 1 ? WALLPAPER_PAGE_OPACITY : look.page_opacity,
+        });
+    };
+
     return (
-        <div className="comp-root" style={style}>
+        <div className={`comp-root${image ? " with-wallpaper" : ""}`} style={style}>
+            {image && wallpaper && (
+                <div className="comp-wallpaper" aria-hidden="true">
+                    <div
+                        className="comp-wallpaper-image"
+                        style={{
+                            backgroundImage: `url("${image.url}")`,
+                            filter: wallpaper.blur_px ? `blur(${wallpaper.blur_px}px)` : undefined,
+                            inset: wallpaper.blur_px ? -2 * wallpaper.blur_px : 0,
+                        }}
+                    />
+                    <div className="comp-wallpaper-tint" style={{ background: hexToRgba(look.background, 1 - wallpaper.visibility) }} />
+                </div>
+            )}
             <div className="comp-scroll">
                 <div className="comp-page">
                     {grouped ? (
@@ -162,6 +209,7 @@ export function Composition({ target, binder, onContentChanged, registerEditorAp
                 </div>
             </div>
 
+            <PomodoroPill />
             <div className="comp-bar-zone">
                 <div className="comp-bar">
                     <span className="comp-title">{displayTitle(target)}</span>
@@ -179,6 +227,20 @@ export function Composition({ target, binder, onContentChanged, registerEditorAp
                         />
                     ))}
                     <input type="color" title={t("Custom background")} value={look.background} onChange={(e) => adjust({ background: e.target.value })} />
+                    <button
+                        type="button"
+                        className={`comp-toggle${look.use_wallpaper ? " active" : ""}`}
+                        aria-pressed={look.use_wallpaper}
+                        disabled={!wallpaper?.file}
+                        title={
+                            wallpaper?.file
+                                ? t("Show the wallpaper behind the page, tinted with the background colour")
+                                : t("Choose a wallpaper in Preferences → Personalization first")
+                        }
+                        onClick={toggleWallpaper}
+                    >
+                        <IconImage size={14} /> {t("Wallpaper")}
+                    </button>
                     <span className="comp-label">{t("Page")}</span>
                     <input type="color" title={t("Page colour")} value={look.page_color} onChange={(e) => adjust({ page_color: e.target.value })} />
                     <span className="comp-label">{t("Text")}</span>
@@ -217,6 +279,7 @@ export function Composition({ target, binder, onContentChanged, registerEditorAp
                         />
                     </label>
                     <span className="spacer" />
+                    <PomodoroToggle />
                     <button type="button" className="comp-exit" onClick={onExit} title={t("Leave composition mode (Esc)")}>
                         <IconClose size={14} /> {t("Exit")}
                     </button>

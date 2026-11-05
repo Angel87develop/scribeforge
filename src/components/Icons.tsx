@@ -205,6 +205,17 @@ export function IconImport({ size = 16, className, style }: IconProps) {
     ));
 }
 
+export function IconTimer({ size = 16, className, style }: IconProps) {
+    return svg(size, className, style, (
+        <>
+            <circle cx="12" cy="13" r="8" />
+            <path d="M12 9v4l2.5 2.5" />
+            <path d="M10 2h4" />
+            <path d="M12 2v3" />
+        </>
+    ));
+}
+
 export function IconRefresh({ size = 16, className, style }: IconProps) {
     return svg(size, className, style, (
         <>

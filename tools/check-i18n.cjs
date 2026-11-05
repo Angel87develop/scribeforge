@@ -32,6 +32,7 @@ const DATA_FILES = {
     "src/dialogs/SpellingDialog.tsx": ["label"],
     "src/dialogs/FindReplaceDialog.tsx": ["*record"],
     "src/components/ParagraphFormatDialog.tsx": ["label", "*tuple"],
+    "src/components/Pomodoro.tsx": ["*record"],
 };
 
 /** Rust sources whose display strings the interface translates. */

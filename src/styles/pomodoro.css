@@ -1,0 +1,251 @@
+/* Pomodoro timer (components/Pomodoro.tsx). Each phase has its colour:
+ * focus uses the theme accent, breaks green and blue. */
+
+.phase-focus {
+    --pomo-color: var(--accent);
+}
+.phase-short {
+    --pomo-color: #4a8a5a;
+}
+.phase-long {
+    --pomo-color: #4f7fb8;
+}
+
+/* ---- Status bar button and its panel ---- */
+.pomo-anchor {
+    position: relative;
+    display: inline-flex;
+}
+.pomo-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-height: 0;
+    padding: 1px 8px;
+    border: 1px solid transparent;
+    border-radius: 10px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+}
+.pomo-button:hover {
+    background: var(--bg-button-hover);
+}
+.pomo-button.running {
+    color: var(--text-on-primary);
+    background: var(--pomo-color);
+}
+.pomo-button-time {
+    font-variant-numeric: tabular-nums;
+    font-weight: 600;
+}
+
+.pomo-panel {
+    position: absolute;
+    bottom: calc(100% + 8px);
+    right: 0;
+    z-index: 150;
+    width: 248px;
+    padding: 14px 16px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.18);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-primary);
+    cursor: default;
+}
+.pomo-phase {
+    font-size: var(--font-size-sm);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--pomo-color);
+}
+.pomo-ring {
+    position: relative;
+    width: 132px;
+    height: 132px;
+}
+.pomo-ring svg {
+    width: 100%;
+    height: 100%;
+    transform: rotate(-90deg);
+}
+.pomo-ring circle {
+    fill: none;
+    stroke-width: 8;
+}
+.pomo-ring-track {
+    stroke: var(--border-light);
+}
+.pomo-ring-value {
+    stroke: var(--pomo-color);
+    stroke-linecap: round;
+    transition: stroke-dashoffset 0.25s linear;
+}
+.pomo-ring-time {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 28px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.pomo-rounds {
+    display: flex;
+    gap: 6px;
+}
+.pomo-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1.5px solid var(--pomo-color);
+}
+.pomo-dot.done {
+    background: var(--pomo-color);
+}
+.pomo-actions {
+    display: flex;
+    gap: 6px;
+}
+.pomo-actions button {
+    padding: 4px 12px;
+}
+.pomo-stats {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    text-align: center;
+    line-height: 1.5;
+}
+.pomo-settings-toggle {
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    padding: 2px 6px;
+}
+.pomo-settings-toggle:hover {
+    color: var(--text-primary);
+    background: transparent;
+}
+.pomo-settings {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-light);
+}
+.pomo-field {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: var(--font-size-sm);
+}
+.pomo-field input {
+    width: 60px;
+    font: inherit;
+    padding: 2px 6px;
+    background: var(--bg-input);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+}
+.pomo-check {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--font-size-sm);
+}
+.pomo-check input {
+    accent-color: var(--accent);
+}
+
+/* ---- Notice when a period ends (above composition mode too) ---- */
+.pomo-notice {
+    position: fixed;
+    left: 0;
+    right: 0;
+    margin: 0 auto;
+    bottom: 44px;
+    z-index: 400;
+    width: 300px;
+    padding: 14px 16px 12px;
+    background: var(--bg-elevated);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--pomo-color);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 12px 36px rgba(0, 0, 0, 0.25);
+    animation: pomo-in 0.25s ease;
+}
+@keyframes pomo-in {
+    from {
+        opacity: 0;
+        transform: translateY(12px);
+    }
+}
+.pomo-notice-title {
+    font-weight: 600;
+    font-size: var(--font-size-md);
+    margin-bottom: 4px;
+}
+.pomo-notice-text {
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+}
+.pomo-notice-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+    margin-top: 10px;
+}
+
+/* ---- Composition mode corner timer ---- */
+.pomo-pill {
+    position: fixed;
+    top: 14px;
+    right: 18px;
+    z-index: 2;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 0;
+    padding: 3px 10px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(20, 18, 15, 0.45);
+    color: rgba(255, 255, 255, 0.85);
+    font-size: var(--font-size-sm);
+    font-variant-numeric: tabular-nums;
+    opacity: 0.55;
+    transition: opacity 0.2s ease;
+    backdrop-filter: blur(6px);
+}
+.pomo-pill:hover {
+    opacity: 1;
+    background: rgba(20, 18, 15, 0.7);
+}
+.pomo-pill.paused {
+    opacity: 0.8;
+}
+.pomo-pill-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--pomo-color);
+}
+.pomo-pill.paused .pomo-pill-dot {
+    background: transparent;
+    border: 1.5px solid var(--pomo-color);
+}
+.pomo-pill-words {
+    opacity: 0.75;
+}

@@ -473,6 +473,8 @@ export interface Preferences {
         page_width_px: number;
         font_size: number;
         page_opacity: number;
+        /** Show the wallpaper behind the page. */
+        use_wallpaper: boolean;
     };
     format: FormatSettings;
     sync: {

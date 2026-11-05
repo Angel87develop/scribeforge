@@ -10,7 +10,33 @@
     transition: background 0.2s ease;
 }
 
+/* Wallpaper behind the page, tinted with the backdrop colour. */
+.comp-wallpaper {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+}
+.comp-wallpaper > div {
+    position: absolute;
+    inset: 0;
+}
+.comp-wallpaper-image {
+    background-position: center;
+    background-size: cover;
+    background-repeat: no-repeat;
+}
+.comp-wallpaper-tint {
+    transition: background 0.2s ease;
+}
+/* A see-through page is frosted so the text stays readable. */
+.comp-root.with-wallpaper .comp-page {
+    backdrop-filter: blur(14px) saturate(1.1);
+    box-shadow: 0 10px 50px rgba(0, 0, 0, 0.35);
+}
+
 .comp-scroll {
+    position: relative;
     flex: 1 1 auto;
     overflow-y: auto;
     min-height: 0;
@@ -142,6 +168,28 @@
 .comp-range input[type="range"] {
     width: 90px;
 }
+.comp-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    min-height: 22px;
+    padding: 1px 8px;
+    background: transparent;
+    border-color: rgba(255, 255, 255, 0.3);
+    color: inherit;
+}
+.comp-toggle:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.12);
+}
+.comp-toggle.active {
+    background: rgba(255, 255, 255, 0.85);
+    border-color: #fff;
+    color: #1d1a16;
+}
+.comp-toggle:disabled {
+    opacity: 0.45;
+}
+
 .comp-exit {
     display: inline-flex;
     align-items: center;
