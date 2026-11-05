@@ -338,6 +338,33 @@
 .dir-picker input {
     flex: 1 1 auto;
 }
+.dir-picker button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+/* ---- Import from Scrivener ---- */
+.import-result {
+    font-size: var(--font-size-md);
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 8px;
+}
+.dialog-body > .hint {
+    display: block;
+    font-size: var(--font-size-sm);
+    color: var(--text-secondary);
+    margin-bottom: 12px;
+}
+.import-skipped {
+    max-height: 120px;
+    overflow-y: auto;
+    margin: 4px 0 0 18px;
+    font-size: var(--font-size-sm);
+    color: var(--text-primary);
+}
 
 /* ---- Recent projects list ---- */
 .recent-list {

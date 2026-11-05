@@ -598,6 +598,28 @@ export interface CreateProjectArgs {
     author?: string | null;
 }
 
+/** A Scrivener project chosen for import (`commands::ScrivenerSource`). */
+export interface ScrivenerSource {
+    /** The `.scrivx` file inside the `.scriv` folder. */
+    path: string;
+    /** Suggested name for the new project. */
+    name: string;
+}
+
+/** What an import did (`import::scrivener::ImportSummary`). */
+export interface ImportSummary {
+    documents: number;
+    images: number;
+    /** Binder titles of PDFs and other files that were not copied. */
+    not_copied: string[];
+}
+
+export interface ImportScrivenerArgs {
+    source: string;
+    name: string;
+    directory: string;
+}
+
 export const api = {
     listCategories: (): Promise<CategoryDto[]> => invoke("list_categories"),
     listTemplates: (category: string): Promise<TemplatePreview[]> =>
@@ -613,6 +635,11 @@ export const api = {
         invoke("open_project_at_path", { path, readOnly }),
     createProject: (args: CreateProjectArgs): Promise<OpenProjectResult> =>
         invoke("create_project", { args }),
+    /** Opens a folder dialog; null when cancelled, rejects when no project is there. */
+    pickScrivenerProject: (): Promise<ScrivenerSource | null> => invoke("pick_scrivener_project"),
+    /** Creates the `.scri` file and opens it. */
+    importScrivener: (args: ImportScrivenerArgs): Promise<{ opened: OpenProjectResult; summary: ImportSummary }> =>
+        invoke("import_scrivener", { args }),
     getCurrentProject: (): Promise<CurrentProjectDto> =>
         invoke("get_current_project"),
     getDocument: (id: string): Promise<DocumentDto> =>

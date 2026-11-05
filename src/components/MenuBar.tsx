@@ -12,7 +12,7 @@ import { t } from "../i18n";
 
 export type MenuAction =
     // File
-    | "new-project" | "new-document" | "new-folder" | "open-project" | "open-recent"
+    | "new-project" | "new-document" | "new-folder" | "open-project" | "open-recent" | "import-scrivener"
     | "save" | "save-as" | "backups" | "compile" | "close-project" | "exit"
     // Edit
     | "undo" | "redo" | "cut" | "copy" | "paste" | "select-all"

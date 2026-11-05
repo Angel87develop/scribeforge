@@ -17,20 +17,36 @@ type View = "templates" | "workspace" | "welcome";
 
 export default function App() {
     const [view, setView] = useState<View>("templates");
+    // The templates screen opens with the Scrivener import dialog.
+    const [importing, setImporting] = useState(false);
     // Changing the language renders the whole tree again from here.
     useLanguage();
 
     if (view === "templates") {
         return (
             <ProjectTemplates
-                onProjectOpened={() => setView("workspace")}
-                onCancel={() => setView("welcome")}
+                startImport={importing}
+                onProjectOpened={() => {
+                    setImporting(false);
+                    setView("workspace");
+                }}
+                onCancel={() => {
+                    setImporting(false);
+                    setView("welcome");
+                }}
             />
         );
     }
 
     if (view === "workspace") {
-        return <Workspace onBackToTemplates={() => setView("templates")} />;
+        return (
+            <Workspace
+                onBackToTemplates={(intent) => {
+                    setImporting(intent === "import");
+                    setView("templates");
+                }}
+            />
+        );
     }
 
     // Welcome / idle screen.

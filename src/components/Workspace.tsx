@@ -75,7 +75,8 @@ import "../styles/workspace.css";
 import { getLanguage, t, tn } from "../i18n";
 
 interface Props {
-    onBackToTemplates: () => void;
+    /** "import" opens the Scrivener import dialog there. */
+    onBackToTemplates: (intent?: "import") => void;
 }
 
 const BINDER_KEY = "sf.binder.width";
@@ -495,7 +496,10 @@ export function Workspace({ onBackToTemplates }: Props) {
                 switch (a) {
                     case "new-project":
                     case "open-project":
-                        await closeThen(onBackToTemplates);
+                        await closeThen(() => onBackToTemplates());
+                        return;
+                    case "import-scrivener":
+                        await closeThen(() => onBackToTemplates("import"));
                         return;
                     case "new-document":
                         await createChild("document");
@@ -893,6 +897,7 @@ export function Workspace({ onBackToTemplates }: Props) {
                     { label: "New Folder", action: "new-folder" },
                     { separator: true, label: "" },
                     { label: "Open Project…", action: "open-project", shortcut: "Ctrl+O" },
+                    { label: "Import from Scrivener…", action: "import-scrivener" },
                     { separator: true, label: "" },
                     { label: "Save", action: "save", shortcut: "Ctrl+S" },
                     { label: "Save As…", action: "save-as" },

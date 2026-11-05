@@ -1,7 +1,8 @@
 /// Project Templates selector — the first-run and new-project window.
 ///
 /// Layout: left category sidebar, centre template grid, right preview pane,
-/// bottom action bar (Open Recent, Open Existing File, Cancel, Open).
+/// bottom action bar (Open Recent, Open Existing File, Import from Scrivener,
+/// Cancel, Open).
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { api, type CategoryDto, type OpenProjectResult, type TemplatePreview } from "../services/api";
@@ -11,10 +12,12 @@ import {
     IconClock,
     IconClose,
     IconDocument,
+    IconImport,
     IconOpen,
     IconPlus,
 } from "../components/Icons";
 import { CreateProjectDialog } from "./CreateProjectDialog";
+import { ImportScrivenerDialog } from "./ImportScrivenerDialog";
 import { RecentProjectsDialog } from "./RecentProjectsDialog";
 import { SyncTip, useGuardedOpen } from "./SyncDialogs";
 import "../styles/templates.css";
@@ -24,16 +27,18 @@ type Status = { kind: "idle" } | { kind: "busy"; message: string } | { kind: "er
 
 interface Props {
     onProjectOpened: () => void;
+    /** Open the Scrivener import dialog right away (File → Import from Scrivener). */
+    startImport?: boolean;
     onCancel: () => void;
 }
 
-export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
+export function ProjectTemplates({ onProjectOpened, onCancel, startImport = false }: Props) {
     const [categories, setCategories] = useState<CategoryDto[]>([]);
     const [activeCategory, setActiveCategory] = useState("getting-started");
     const [templates, setTemplates] = useState<TemplatePreview[]>([]);
     const [selectedTemplate, setSelectedTemplate] = useState<TemplatePreview | null>(null);
     const [status, setStatus] = useState<Status>({ kind: "idle" });
-    const [overlay, setOverlay] = useState<null | "recent" | "create">(null);
+    const [overlay, setOverlay] = useState<null | "recent" | "create" | "import">(startImport ? "import" : null);
     const [defaultDir, setDefaultDir] = useState("");
     const { prefs, save: savePrefs } = usePreferences();
 
@@ -260,6 +265,9 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                     <button onClick={handleOpenExisting}>
                         <IconOpen size={15} /> {t("Open Existing File")}
                     </button>
+                    <button onClick={() => setOverlay("import")}>
+                        <IconImport size={15} /> {t("Import from Scrivener")}
+                    </button>
                 </div>
                 <div className="spacer" />
                 <button onClick={onCancel}>
@@ -304,6 +312,16 @@ export function ProjectTemplates({ onProjectOpened, onCancel }: Props) {
                 />
             )}
             {guarded.dialog}
+            {overlay === "import" && (
+                <ImportScrivenerDialog
+                    defaultDir={defaultDir}
+                    onDone={() => {
+                        setOverlay(null);
+                        onProjectOpened();
+                    }}
+                    onCancel={() => setOverlay(null)}
+                />
+            )}
             {overlay === "create" && selectedTemplate && (
                 <CreateProjectDialog
                     template={selectedTemplate}

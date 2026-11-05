@@ -7,6 +7,7 @@ mod commands;
 pub mod compile;
 pub mod errors;
 pub mod format_profiles;
+pub mod import;
 pub mod organization;
 pub mod project;
 pub mod settings;
@@ -48,6 +49,8 @@ pub fn run() {
             commands::list_recent_projects,
             commands::remove_recent_project,
             commands::pick_project_file,
+            commands::pick_scrivener_project,
+            commands::import_scrivener,
             commands::check_project_open,
             commands::list_conflict_copies,
             commands::get_sync_status,

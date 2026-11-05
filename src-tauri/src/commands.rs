@@ -237,6 +237,72 @@ pub fn create_project(
     open_project_internal(&state, &target, false)
 }
 
+// ---------------------------------------------------------------------------
+// Import from Scrivener
+// ---------------------------------------------------------------------------
+
+/// A Scrivener project chosen for import.
+#[derive(Debug, Clone, Serialize)]
+pub struct ScrivenerSource {
+    /// The `.scrivx` file inside the `.scriv` folder.
+    pub path: String,
+    /// Suggested name for the new project.
+    pub name: String,
+}
+
+/// Let the user pick a Scrivener project: the `.scriv` folder (or the folder
+/// holding it).
+#[tauri::command]
+pub fn pick_scrivener_project(state: State<'_, AppState>) -> AppResult<Option<ScrivenerSource>> {
+    let Some(dir) = rfd::FileDialog::new()
+        .set_title(localized(&state, "Choose the Scrivener project (.scriv folder)", "Elige el proyecto de Scrivener (carpeta .scriv)"))
+        .pick_folder()
+    else {
+        return Ok(None);
+    };
+    let scrivx = crate::import::scrivener::find_scrivx(&dir)?;
+    Ok(Some(ScrivenerSource {
+        name: crate::import::scrivener::project_name(&scrivx),
+        path: scrivx.to_string_lossy().to_string(),
+    }))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct ImportScrivenerArgs {
+    /// `ScrivenerSource::path`.
+    pub source: String,
+    pub name: String,
+    /// Directory where the new `.scri` file is created.
+    pub directory: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct ImportScrivenerResult {
+    pub opened: OpenProjectResult,
+    pub summary: crate::import::scrivener::ImportSummary,
+}
+
+/// Turn a Scrivener project into a new `.scri` file and open it. The
+/// Scrivener project is only read.
+#[tauri::command]
+pub fn import_scrivener(state: State<'_, AppState>, args: ImportScrivenerArgs) -> AppResult<ImportScrivenerResult> {
+    validate_project_name(&args.name)?;
+    let dir = PathBuf::from(&args.directory);
+    fs::create_dir_all(&dir)?;
+    let target = ensure_scri_extension(&dir.join(args.name.trim()));
+    if target.exists() {
+        return Err(AppError::InvalidName(format!("a file already exists at {}", target.display())));
+    }
+    let scrivx = crate::import::scrivener::find_scrivx(Path::new(&args.source))?;
+    let (project, summary) = crate::import::scrivener::import(&scrivx, args.name.trim().to_string(), None)?;
+    if let Err(e) = write_project_to_path(&project, &target) {
+        let _ = fs::remove_file(&target);
+        return Err(e);
+    }
+    let opened = open_project_internal(&state, &target, false)?;
+    Ok(ImportScrivenerResult { opened, summary })
+}
+
 fn validate_project_name(name: &str) -> AppResult<()> {
     let trimmed = name.trim();
     if trimmed.is_empty() {
