@@ -314,7 +314,6 @@ fn full_project_state_survives_save_and_reopen() {
 
     let draft = p.root_id(DocumentKind::DraftRoot).unwrap();
     let research = p.root_id(DocumentKind::ResearchRoot).unwrap();
-    let trash = p.root_id(DocumentKind::TrashRoot).unwrap();
 
     // Draft: folder + documents.
     let part = p.create_child(draft, DocumentKind::Folder, "Part One").unwrap();

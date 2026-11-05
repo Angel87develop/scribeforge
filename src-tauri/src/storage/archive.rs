@@ -20,7 +20,6 @@ use crate::project::model::Project;
 const MANIFEST_PATH: &str = "manifest.json";
 const DOCUMENT_INDEX_PATH: &str = "documents/index.json";
 const DOCUMENTS_DIR: &str = "documents";
-const METADATA_DIR: &str = "metadata";
 const METADATA_PROJECT_PATH: &str = "metadata/project.json";
 const ASSETS_DIR: &str = "assets";
 const STATS_PATH: &str = "metadata/stats.json";

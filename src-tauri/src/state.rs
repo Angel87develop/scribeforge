@@ -109,18 +109,6 @@ impl AppState {
         f(project)
     }
 
-    /// Borrow the open project and its path immutably.
-    pub fn with_project_and_path<F, T>(&self, f: F) -> AppResult<T>
-    where
-        F: FnOnce(&Project, &PathBuf) -> AppResult<T>,
-    {
-        let guard = self.open_project.read();
-        let open = guard.project.as_ref();
-        let project = open.ok_or(AppError::NoProjectOpen)?;
-        let path = guard.path.as_ref().ok_or(AppError::NoProjectOpen)?;
-        f(project, path)
-    }
-
     /// Run a mutation on the open project, marking it dirty on success.
     pub fn mutate_project<F, T>(&self, f: F) -> AppResult<T>
     where

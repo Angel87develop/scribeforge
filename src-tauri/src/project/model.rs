@@ -9,7 +9,7 @@ use std::collections::{BTreeSet, HashMap};
 use chrono::Utc;
 use uuid::Uuid;
 
-use super::document::{Document, DocumentKind, DocumentMetaDto, ImageAttachment};
+use super::document::{Document, DocumentKind, DocumentMetaDto};
 use super::manifest::Manifest;
 use crate::organization::collections::Collection;
 use crate::organization::timeline::TimelineEvent;

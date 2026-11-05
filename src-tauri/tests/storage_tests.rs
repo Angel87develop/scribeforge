@@ -8,8 +8,8 @@
 use std::io::Write;
 
 use scribeforge_lib::project::manifest::Manifest;
-use scribeforge_lib::project::model::Project;
 use scribeforge_lib::storage::{read_project_from_path, write_project_to_path};
+use scribeforge_lib::sync::{list_backups, local_backups_dir};
 use scribeforge_lib::templates::build_project_from_template;
 
 fn temp_dir(tag: &str) -> std::path::PathBuf {
@@ -233,10 +233,16 @@ fn save_over_existing_preserves_data_on_success() {
     assert_eq!(reopened.manifest.name, "Resave v2");
     assert_ne!(reopened.manifest.name, name_before);
 
-    // A backup should have been created by the rotation policy.
-    let backups_dir = dir.join("Resave.backups");
-    assert!(backups_dir.exists(), "backups dir missing");
+    // Each save leaves a backup on this computer, outside the project's
+    // folder (which may be synced), named after the project file.
+    let id = project.manifest.project_id;
+    let backups = list_backups(id).unwrap();
+    assert!(!backups.is_empty(), "no backup was made");
+    assert!(backups.iter().all(|b| b.file_name.starts_with("Resave-") && b.file_name.ends_with(".scri")));
+    assert!(read_project_from_path(std::path::Path::new(&backups[0].path)).is_ok(), "the backup opens");
+    assert!(!dir.join("Resave.backups").exists(), "nothing is written next to the project");
 
+    std::fs::remove_dir_all(local_backups_dir(id).unwrap()).ok();
     std::fs::remove_dir_all(&dir).ok();
 }
 
